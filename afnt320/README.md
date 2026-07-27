@@ -31,11 +31,13 @@ at offset `#140` within every scan line.
 * bytes 256..2303 — eight rows of 256 one-bit glyph bytes, bit 7 leftmost.
 
 During the build, `tools/font_to_accel.py` converts it to variable-width
-column-major data: every glyph column becomes eight `00/FF` mask bytes.
-The renderer combines these masks with foreground/background blocks and writes
-each complete vertical column through the Sprinter accelerator. The generated
-asset is assembled with `INCBIN`, so the deployed DLL has no external font-file
-dependency.
+column-major data. A 256-byte occupancy table identifies non-empty glyph
+columns; only those columns are stored as eight `00/FF` mask bytes. Empty
+columns are emitted directly with `FILL_VERT`, while non-empty columns are
+combined with foreground/background blocks and written with `COPY_VERT`.
+On a black background the renderer omits the background XOR pass entirely.
+The generated asset is assembled with `INCBIN`, so the deployed DLL has no
+external font-file dependency.
 
 Screen clearing also uses the accelerator: 320 vertical fill operations clear
 all 256 rows without an 81,920-iteration CPU pixel loop.

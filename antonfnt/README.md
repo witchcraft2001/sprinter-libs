@@ -32,6 +32,14 @@ dependency. `font.bin` is the 6888-byte original Anton format: 256 packed
 column widths, 256 low offset bytes, 256 high offset bytes, then variable-size
 column-major 8-row glyph rasters.
 
+Screen clearing is performed by the accelerator as 320 vertical fills, one
+for each packed byte column. Text rendering uses
+`background XOR (mask AND (foreground XOR background))`; on a black
+background it omits the background XOR pass. When the text and video memory
+occupy different CPU windows, the video page is mapped once for the complete
+string. The safe per-character mapping path remains in use when both share a
+window.
+
 ## Build
 
 The Makefile uses the repository's `sprinter-mkdll` and its `sjasmplus`

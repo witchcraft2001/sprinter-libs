@@ -63,6 +63,7 @@ init:
 			CALL	configure_window
 			XOR	A
 			LD	(screen_id),A
+			LD	(color_valid),A
 			RET
 
 free:
@@ -216,18 +217,12 @@ select_video_page:
 			CALL	write_page
 			RET
 
-; Clear all 256 scan lines in packed 640x256 mode (320 bytes per line).
+; Clear all 320 byte-columns with one 256-pixel vertical fill each.
 clear_screen_640:
 			DI
 			CALL	read_page
 			LD	(saved_page),A
 			CALL	select_video_page
-			XOR	A
-			LD	(clear_row),A
-
-clear_screen_640_row:
-			LD	A,(clear_row)
-			OUT	(YPORT),A
 			LD	HL,(vram_base)
 			LD	A,(screen_id)
 			OR	A
@@ -235,20 +230,22 @@ clear_screen_640_row:
 			LD	BC,SCREEN_STRIDE
 			ADD	HL,BC
 clear_screen_640_base_ready:
+			XOR	A
+			OUT	(YPORT),A
+			LD	E,A			; packed colour 0
+			LD	D,D			; SET_BUFFER
+			LD	A,0			; 0 encodes 256 rows
+			LD	B,B
 			LD	BC,320
-clear_screen_640_byte:
-			; A is clobbered by the BC termination test, so use an immediate
-			; zero.  Otherwise every row becomes a counter-value gradient.
-			LD	(HL),0
+clear_screen_640_column:
+			LD	E,E			; FILL_VERT
+			LD	(HL),E
+			LD	B,B
 			INC	HL
 			DEC	BC
 			LD	A,B
 			OR	C
-			JR	NZ,clear_screen_640_byte
-			LD	A,(clear_row)
-			INC	A
-			LD	(clear_row),A
-			JR	NZ,clear_screen_640_row
+			JR	NZ,clear_screen_640_column
 
 			LD	A,(saved_page)
 			CALL	write_page
@@ -285,11 +282,39 @@ text_out_640_base_ready:
 			ADD	HL,BC
 			LD	B,H
 			LD	C,L
-			LD	HL,background_buffer
-			LD	DE,foreground_buffer
+			LD	HL,foreground_buffer
+			LD	DE,background_buffer
 			EXX
 			LD	C,L
 			LD	B,H
+
+			; Select the colour pipeline once for the complete string.
+			LD	A,(bg_pattern)
+			OR	A
+			LD	HL,text_out_640_rows_general
+			JR	NZ,text_out_640_dispatch_ready
+			LD	HL,text_out_640_rows_black
+text_out_640_dispatch_ready:
+			LD	(text_out_640_dispatch+1),HL
+
+			; Usually the ASCIIZ string lives in a different CPU window, so
+			; map VRAM once for the whole call.  If it occupies the selected
+			; video window, retain the safe historical per-character mapping.
+			LD	A,B
+			AND	0xC0
+			RLCA
+			RLCA
+			LD	D,A
+			LD	A,(video_window)
+			CP	D
+			LD	A,0
+			JR	NZ,text_out_640_page_mode_ready
+			INC	A
+text_out_640_page_mode_ready:
+			LD	(map_per_char),A
+			OR	A
+			CALL	Z,select_video_page
+
 			DI
 			; Exact accelerator setup from ANTONFNT_OLD_DISASM.Z80:
 			; block size 8, then leave the accelerator idle until COPY.
@@ -315,8 +340,16 @@ text_out_640_char:
 			LD	HL,my_font
 			ADD	HL,DE
 			LD	DE,8
-			CALL	select_video_page
-text_out_640_row:
+			LD	A,(map_per_char)
+			OR	A
+			CALL	NZ,select_video_page
+
+text_out_640_dispatch:
+			JP	text_out_640_rows_general
+
+; General colour path:
+;   background XOR (mask AND (foreground XOR background))
+text_out_640_rows_general:
 			; COPY makes the accelerator latch the source font byte.  The
 			; original renderer brackets the ordinary memory read with
 			; COPY/OFF; without this pair every glyph becomes a solid bar.
@@ -327,7 +360,7 @@ text_out_640_row:
 			LD	A,(y_pos)
 			OUT	(YPORT),A
 			LD	L,L
-			OR	(HL)
+			AND	(HL)
 			LD	B,B
 			EX	DE,HL
 			LD	L,L
@@ -339,10 +372,36 @@ text_out_640_row:
 			INC	BC
 			EXX
 			ADD	HL,DE
-			DJNZ	text_out_640_row
+			DJNZ	text_out_640_rows_general
+			JR	text_out_640_char_done
+
+; Black-background path: mask AND foreground.  The background XOR block is
+; identically zero and can be omitted.
+text_out_640_rows_black:
+			LD	L,L
+			LD	A,(HL)
+			LD	B,B
+			EXX
+			LD	A,(y_pos)
+			OUT	(YPORT),A
+			LD	L,L
+			AND	(HL)
+			LD	A,A
+			LD	(BC),A
+			LD	B,B
+			INC	BC
+			EXX
+			ADD	HL,DE
+			DJNZ	text_out_640_rows_black
+
+text_out_640_char_done:
 			POP	BC
+			LD	A,(map_per_char)
+			OR	A
+			JR	Z,text_out_640_next_char
 			LD	A,(saved_page)
 			CALL	write_page
+text_out_640_next_char:
 			LD	A,(BC)
 			INC	BC
 			OR	A
@@ -361,10 +420,17 @@ text_out_640_exit:
 			RET
 
 prepare_print_colors:
+			LD	A,(color_valid)
+			OR	A
+			JR	Z,prepare_print_colors_rebuild
 			LD	A,B
 prepare_print_colors_prev:
 			CP	0
 			RET	Z
+prepare_print_colors_rebuild:
+			LD	A,1
+			LD	(color_valid),A
+			LD	A,B
 			LD	(prepare_print_colors_prev+1),A
 			AND	0x0F
 			LD	C,A
@@ -373,54 +439,45 @@ prepare_print_colors_prev:
 			RLCA
 			RLCA
 			OR	C
-			EXX
-			CPL
-			LD	HL,foreground_buffer
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			EXX
+			LD	(fg_pattern),A
 			LD	A,B
 			AND	0xF0
-			LD	B,A
+			LD	C,A
 			RRCA
 			RRCA
 			RRCA
 			RRCA
-			OR	B
+			OR	C
+			LD	(bg_pattern),A
+			LD	C,A
+			LD	A,(fg_pattern)
+			XOR	C			; foreground XOR background
 			EXX
-			XOR	(HL)
-			; Keep HL on the last ink byte and fill paper through DE,
-			; exactly as in fn_print.a80 and ANTONFNT_OLD_DISASM.Z80.
-			LD	DE,background_buffer
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
+			LD	HL,foreground_buffer
+			CALL	fill_colour_buffer_640
+			LD	A,(bg_pattern)
+			LD	HL,background_buffer
+			CALL	fill_colour_buffer_640
 			EXX
+			RET
+
+; Active in the alternate register set.  Fill eight bytes at HL with A.
+fill_colour_buffer_640:
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
 			RET
 
 ; ---------------------------------------------------------------------------
@@ -433,11 +490,12 @@ page_latch:	DB	0
 vram_base:	DW	0x4000
 screen_id:	DB	0
 saved_page:	DB	0
-clear_row:	DB	0
-glyph_width:	DB	0
-cursor_y:	DB	0
 y_pos:		DB	0
 print_color:	DB	0
+fg_pattern:	DB	0
+bg_pattern:	DB	0
+color_valid:	DB	0
+map_per_char:	DB	0
 fg_color:	DB	0
 bg_color:	DB	0
 str_ptr:	DW	0

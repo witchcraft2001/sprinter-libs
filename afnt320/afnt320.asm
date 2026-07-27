@@ -52,6 +52,7 @@ init:
 			CALL	configure_window
 			XOR	A
 			LD	(screen_id),A
+			LD	(color_valid),A
 			RET
 
 free:
@@ -237,12 +238,15 @@ clear_screen_320_column:
 
 ; ---------------------------------------------------------------------------
 ; Accelerator font renderer (320x256x256, one byte per pixel).  The generated
-; font contains one vertical block of eight 00/FF mask bytes per glyph column.
-; The same OR/XOR pipeline as ANTONFNT turns that mask into foreground and
+; font contains one vertical block of eight 00/FF mask bytes per non-empty
+; glyph column.  The AND/XOR pipeline turns that mask into foreground and
 ; background palette indices, then COPY_VERT writes all eight pixels at once.
 
 text_out_320:
-			LD	(cursor_x),DE
+			PUSH	IX
+			PUSH	IY
+			PUSH	DE
+			POP	IX			; IX = current X
 			LD	B,A
 			LD	A,C
 			LD	(y_pos),A
@@ -266,11 +270,22 @@ text_out_320_base_ready:
 			ADD	HL,BC
 			LD	B,H
 			LD	C,L
-			LD	HL,background_buffer
-			LD	DE,foreground_buffer
+			LD	HL,foreground_buffer
+			LD	DE,background_buffer
 			EXX
 			LD	C,L
 			LD	B,H			; main BC = ASCIIZ string
+
+			; Select the inner loop once per string.  With background zero,
+			; mask AND foreground already produces the final pixels, so the
+			; background XOR pass is unnecessary.
+			LD	A,(bg_color)
+			OR	A
+			LD	HL,text_out_320_columns_general
+			JR	NZ,text_out_320_dispatch_ready
+			LD	HL,text_out_320_columns_black
+text_out_320_dispatch_ready:
+			LD	(text_out_320_dispatch+1),HL
 
 			; Clip the vertical block at the bottom edge.  Patch the immediate
 			; used by SET_BUFFER so no ordinary memory read occurs while the
@@ -292,7 +307,7 @@ text_out_320_height:
 			LD	A,(BC)
 			INC	BC
 			OR	A
-			JR	Z,text_out_320_done
+			JP	Z,text_out_320_done
 
 text_out_320_char:
 			PUSH	BC
@@ -301,24 +316,26 @@ text_out_320_char:
 			LD	H,0
 			ADD	HL,BC
 			LD	B,(HL)			; glyph width
-			LD	A,B
-			LD	(glyph_width),A
+			LD	IYL,B			; preserve the unclipped advance
 			INC	H
 			LD	E,(HL)			; bitmap offset, low
 			INC	H
 			LD	D,(HL)			; bitmap offset, high
+			INC	H
+			LD	A,(HL)			; bit 7..0: non-empty columns
+			LD	IYH,A
 			LD	HL,my_font
 			ADD	HL,DE
 			LD	DE,8			; bytes per vertical column
 
 			; Clip only the final glyph that crosses X=320.  Once cursor_x is
 			; beyond that edge, later glyphs can be skipped immediately.
-			LD	A,(cursor_x+1)
+			LD	A,IXH
 			OR	A
 			JR	Z,text_out_320_width_ready
 			CP	1
 			JR	NZ,text_out_320_skip_glyph
-			LD	A,(cursor_x)
+			LD	A,IXL
 			CP	0x40
 			JR	NC,text_out_320_skip_glyph
 			LD	C,A
@@ -331,19 +348,27 @@ text_out_320_width_ready:
 			LD	A,B
 			OR	A
 			JR	Z,text_out_320_skip_glyph
+			LD	C,IYH
 
-text_out_320_column:
+text_out_320_dispatch:
+			JP	text_out_320_columns_general
+
+; General colour path:
+;   background XOR (mask AND (foreground XOR background))
+text_out_320_columns_general:
+			RLC	C
+			JR	NC,text_out_320_column_blank_general
 			LD	L,L			; COPY mask column to accelerator RAM
 			LD	A,(HL)
 			LD	B,B			; OFF
 			EXX
 			LD	A,(y_pos)
 			OUT	(YPORT),A
-			LD	L,L			; COPY background block
-			OR	(HL)
+			LD	L,L			; COPY foreground XOR background
+			AND	(HL)
 			LD	B,B
 			EX	DE,HL
-			LD	L,L			; COPY foreground block
+			LD	L,L			; COPY background block
 			XOR	(HL)
 			LD	A,A			; COPY_VERT result to VRAM
 			LD	(BC),A
@@ -352,20 +377,66 @@ text_out_320_column:
 			INC	BC			; next screen X
 			EXX
 			ADD	HL,DE			; next eight-byte mask column
-			DJNZ	text_out_320_column
+			DJNZ	text_out_320_columns_general
+			JR	text_out_320_skip_glyph
+
+text_out_320_column_blank_general:
+			EXX
+			LD	A,(y_pos)
+			OUT	(YPORT),A
+			LD	A,(bg_color)
+			LD	E,E			; FILL_VERT background
+			LD	(BC),A
+			LD	B,B
+			INC	BC
+			EXX
+			DJNZ	text_out_320_columns_general
+			JR	text_out_320_skip_glyph
+
+; Black-background path:
+;   mask AND foreground
+; This removes one complete eight-byte accelerator pass per non-empty column.
+text_out_320_columns_black:
+			RLC	C
+			JR	NC,text_out_320_column_blank_black
+			LD	L,L			; COPY mask column to accelerator RAM
+			LD	A,(HL)
+			LD	B,B
+			EXX
+			LD	A,(y_pos)
+			OUT	(YPORT),A
+			LD	L,L			; COPY foreground block
+			AND	(HL)
+			LD	A,A			; COPY_VERT result to VRAM
+			LD	(BC),A
+			LD	B,B
+			INC	BC
+			EXX
+			ADD	HL,DE
+			DJNZ	text_out_320_columns_black
+			JR	text_out_320_skip_glyph
+
+text_out_320_column_blank_black:
+			EXX
+			LD	A,(y_pos)
+			OUT	(YPORT),A
+			XOR	A
+			LD	E,E			; FILL_VERT black background
+			LD	(BC),A
+			LD	B,B
+			INC	BC
+			EXX
+			DJNZ	text_out_320_columns_black
 
 text_out_320_skip_glyph:
 			POP	BC
-			LD	HL,(cursor_x)
-			LD	A,(glyph_width)
-			LD	E,A
+			LD	E,IYL
 			LD	D,0
-			ADD	HL,DE
-			LD	(cursor_x),HL
+			ADD	IX,DE
 			LD	A,(BC)
 			INC	BC
 			OR	A
-			JR	NZ,text_out_320_char
+			JP	NZ,text_out_320_char
 
 text_out_320_done:
 			LD	B,B			; accelerator OFF
@@ -376,57 +447,61 @@ text_out_320_done:
 			CALL	write_page
 			LD	A,0xC0
 			OUT	(YPORT),A
+			POP	IY
+			POP	IX
 			RET
 
 ; Build the two eight-byte operands used by the mask pipeline:
-;   result = (mask OR (background XOR ~foreground)) XOR ~foreground
+;   result = background XOR (mask AND (foreground XOR background))
 prepare_colors_320:
+			LD	A,(color_valid)
+			OR	A
+			JR	Z,prepare_colors_320_rebuild
 			LD	A,B
+prepare_colors_320_prev:
+			CP	0
+			RET	Z
+prepare_colors_320_rebuild:
+			LD	A,1
+			LD	(color_valid),A
+			LD	A,B
+			LD	(prepare_colors_320_prev+1),A
 			AND	0x0F
-			CPL
-			EXX
-			LD	HL,foreground_buffer
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			EXX
+			LD	C,A			; foreground
 			LD	A,B
 			AND	0xF0
 			RRCA
 			RRCA
 			RRCA
 			RRCA
+			LD	(bg_color),A
+			XOR	C			; foreground XOR background
 			EXX
-			XOR	(HL)
-			LD	DE,background_buffer
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
-			INC	DE
-			LD	(DE),A
+			LD	HL,foreground_buffer
+			CALL	fill_colour_buffer
+			LD	A,(bg_color)
+			LD	HL,background_buffer
+			CALL	fill_colour_buffer
 			EXX
+			RET
+
+; Active in the alternate register set.  Fill eight bytes at HL with A.
+fill_colour_buffer:
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
+			INC	HL
+			LD	(HL),A
 			RET
 
 ; ---------------------------------------------------------------------------
@@ -439,10 +514,10 @@ page_latch:	DB	0
 vram_base:	DW	0x4000
 screen_id:	DB	0
 saved_page:	DB	0
-glyph_width:	DB	0
 y_pos:		DB	0
 print_color:	DB	0
-cursor_x:	DW	0
+bg_color:	DB	0
+color_valid:	DB	0
 
 foreground_buffer:	DS	8,0
 background_buffer:	DS	8,0
@@ -466,7 +541,7 @@ custom_palette:
 			DB	0x55,0xFF,0xFF,0x00
 			DB	0xFF,0xFF,0xFF,0x00
 
-; Generated layout: 256 widths, 256 low offsets, 256 high offsets, followed
-; by variable-width columns of eight 00/FF mask bytes.
+; Generated layout: 256 widths, 256 low offsets, 256 high offsets, 256
+; non-empty-column masks, then only non-empty columns as eight 00/FF bytes.
 my_font:
 			INCBIN	"build/font_accel.bin"

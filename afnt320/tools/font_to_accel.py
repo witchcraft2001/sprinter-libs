@@ -18,16 +18,26 @@ def main() -> None:
         raise SystemExit("every glyph width must be in the range 1..8")
 
     offsets: list[int] = []
+    column_maps = bytearray()
     bitmap = bytearray()
-    bitmap_base = 3 * 256
+    bitmap_base = 4 * 256
+    blank_columns = 0
 
     for char, width in enumerate(widths):
         offsets.append(bitmap_base + len(bitmap))
+        column_map = 0
         for column in range(width):
             mask = 0x80 >> column
+            pixels = bytearray()
             for row in range(8):
                 packed = source[256 + row * 256 + char]
-                bitmap.append(0xFF if packed & mask else 0x00)
+                pixels.append(0xFF if packed & mask else 0x00)
+            if any(pixels):
+                column_map |= mask
+                bitmap.extend(pixels)
+            else:
+                blank_columns += 1
+        column_maps.append(column_map)
 
     if bitmap_base + len(bitmap) >= 0x10000:
         raise SystemExit("converted font offsets do not fit in 16 bits")
@@ -35,12 +45,14 @@ def main() -> None:
     result = bytearray(widths)
     result.extend(offset & 0xFF for offset in offsets)
     result.extend(offset >> 8 for offset in offsets)
+    result.extend(column_maps)
     result.extend(bitmap)
     Path(sys.argv[2]).write_bytes(result)
 
     print(
         f"created {sys.argv[2]}: {len(result)} bytes, "
-        f"{len(bitmap)} bytes of column masks"
+        f"{len(bitmap)} bytes of column masks, "
+        f"{blank_columns} blank columns elided"
     )
 
 
