@@ -1,6 +1,6 @@
         org     #8100-512
 
-; ANTONFNT.DLL visual test.  Put ANTONFNT.DLL next to the resulting EXE.
+; AFNT640.DLL visual test.  Put AFNT640.DLL next to the resulting EXE.
 
         dw      #5845           ; EXE signature
         db      #45, #00        ; EXE type and version
@@ -8,8 +8,8 @@
         dw      start, start, #bfff
         ds      490
 
-ANTONFNT_FNSTYLE       equ     2
-ANTONFNT_APRINT        equ     3
+AFNT640_FNSTYLE        equ     2
+AFNT640_APRINT         equ     3
 DSS_APPINFO            equ     #47
 APPINFO_EXE_HOMEDIR    equ     1
 
@@ -37,7 +37,7 @@ start:
         rst     #10
 
         ld      hl,(handle)
-        ld      b,ANTONFNT_FNSTYLE
+        ld      b,AFNT640_FNSTYLE
         call    LIBMAN.l_call
         jp      c,restore_and_fail
 
@@ -115,7 +115,7 @@ print:
         push    hl
         push    iy
         ld      hl,(handle)
-        ld      b,ANTONFNT_APRINT
+        ld      b,AFNT640_APRINT
         call    LIBMAN.l_call
         pop     iy
         pop     hl
@@ -124,13 +124,13 @@ print:
 handle:         dw      0
 old_mode:       db      0
 old_screen:     db      0
-filename:       db      "ANTONFNT.DLL",0
+filename:       db      "AFNT640.DLL",0
 used_exe_dir:   db      0
 dll_path:       ds      272
-welcome:        db      "ANTONFNT visual test",13,10,0
-error_message:  db      "Test setup failed. Put ANTONFNT.DLL beside this EXE.",13,10,"Press a key.",13,10,0
+welcome:        db      "AFNT640 visual test",13,10,0
+error_message:  db      "Test setup failed. Put AFNT640.DLL beside this EXE.",13,10,"Press a key.",13,10,0
 prompt:         db      13,10,"Press a key to return to the desktop.",13,10,0
-title:          db      "ANTONFNT.DLL - 640 x 256 x 16 font test",0
+title:          db      "AFNT640.DLL - 640 x 256 x 16 font test",0
 line1:          db      "The quick brown fox jumps over the lazy dog.",0
 line2:          db      "ABCDEFGHIJKLMNOPQRSTUVWXYZ  0123456789",0
 line3:          db      "abcdefghijklmnopqrstuvwxyz  ! ? . , : ;",0
@@ -139,7 +139,7 @@ line5:          db      "Colour #02: blue ink on black paper.",0
 line6:          db      "Colour #4E: yellow ink on red paper.",0
 line7:          db      "Colour #1F: bright white ink on blue paper.",0
 line8:          db      "Colour #70: black ink on white paper.",0
-line9:          db      "Anton Enin renderer, accelerated graphic output.",0
+line9:          db      "AFNT640 renderer, accelerated graphic output.",0
 line10:         db      "Each row is drawn through libman L_CALL entry 3.",0
 line11:         db      "0123456789 +-*/=()[]{}<> @#$%&'\"",0
 line12:         db      "Screen should remain clean from top to bottom.",0

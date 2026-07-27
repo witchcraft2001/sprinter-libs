@@ -1,4 +1,4 @@
-; ANTONFNT 640 - L0 DLL for Sprinter libman 1.2/1.3
+; AFNT640 - L0 DLL for Sprinter libman 1.2/1.3
 ;
 ; The public entry points intentionally keep the historical ANTONFNT ABI and
 ; add one optional video-window selector:
@@ -24,7 +24,7 @@
 			DB	27,7			; build date: 27-Jul
 			DW	2026
 			DW	0x0103			; v1.3
-			DB	"Anton Enin Font",0
+			DB	"AFNT640 gfx lib",0
 
 			JP	init
 			JP	free

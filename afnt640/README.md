@@ -1,7 +1,7 @@
-# AntonFnt 640
+# AFNT640
 
-`ANTONFNT.DLL` is an L0 Sprinter libman library with the original ANTONFNT
-entry points and the packed 640×256×16 renderer.
+`AFNT640.DLL` is an L0 Sprinter libman library with the historical ANTONFNT
+entry points and Anton Enin's packed 640×256×16 renderer.
 
 | function | registers | meaning |
 | ---: | --- | --- |
@@ -51,10 +51,10 @@ make verify
 make inspect
 ```
 
-The resulting `build/ANTONFNT.DLL` is compressed using the historical L0
+The resulting `build/AFNT640.DLL` is compressed using the historical L0
 zero-RLE format and is accepted by libman 1.2. `make raw` writes a canonical
 uncompressed image for inspection.
 
-`make` also builds `build/ANTONFNT.EXE`, a visual test which loads
-`ANTONFNT.DLL` from the EXE's directory and renders twelve coloured text
+`make` also builds `build/AFNT640.EXE`, a visual test which loads
+`AFNT640.DLL` from the EXE's directory and renders twelve coloured text
 rows. It falls back to the current directory on older DSS versions.

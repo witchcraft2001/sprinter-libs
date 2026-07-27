@@ -1,6 +1,6 @@
 # AFNT320
 
-`AFNT320.DLL` is the 320×256×256 counterpart to `ANTONFNT.DLL`. It keeps the
+`AFNT320.DLL` is the 320×256×256 counterpart to `AFNT640.DLL`. It keeps the
 same five-entry libman ABI, renders one byte per pixel in 320×256 graphics
 mode, and embeds the font used by `gfxview`.
 
