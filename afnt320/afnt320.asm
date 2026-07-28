@@ -15,9 +15,9 @@
 			DW	0			; uncompressed code size
 			DW	0			; relocation bitmap size
 			DW	0			; checksum
-			DB	27,7			; build date: 27-Jul
+			DB	28,7			; build date: 28-Jul
 			DW	2026
-			DW	0x0103			; v1.3
+			DW	0x0104			; v1.4
 			DB	"AFNT320 gfx lib",0
 
 			JP	init
@@ -37,15 +37,13 @@ SCREEN_STRIDE	EQU	0x0140		; second-screen offset in 320-byte rows
 ; libman entry points
 
 init:
-			; Determine the libman code window from a relocated data address.
+			; A relocated label may be anywhere inside its 16K CPU window.  Only
+			; H7..H6 identify that window; the remaining bits are its offset.
 			LD	HL,video_window
 			LD	A,H
-			RRCA
-			RRCA
-			RRCA
-			RRCA
-			RRCA
-			RRCA
+			AND	0xC0
+			RLCA
+			RLCA
 			LD	(code_window),A
 			; Preserve the historical default: video page through WIN1.
 			LD	A,DEFAULT_WINDOW

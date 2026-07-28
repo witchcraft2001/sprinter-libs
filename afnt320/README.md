@@ -4,6 +4,10 @@
 same five-entry libman ABI, renders one byte per pixel in 320×256 graphics
 mode, and embeds the font used by `gfxview`.
 
+The ready-to-use release binary is committed as
+[`AFNT320.DLL`](AFNT320.DLL). Consumers should copy this file directly and do
+not need the assembler or DLL packaging tools.
+
 | function | registers | meaning |
 | ---: | --- | --- |
 | 0 | — | initialise; select the default WIN1 video window |
@@ -49,10 +53,13 @@ make
 make verify
 make inspect
 make raw
+make release
 ```
 
 The Makefile invokes the repository's `sprinter-mkdll` and `sjasmplus`; the
 result is an L0 zero-RLE compressed DLL accepted by libman 1.2.
+`make release` verifies the build and updates the tracked top-level
+`AFNT320.DLL`; commit it together with its source changes.
 
 `make` also builds `build/AFNT320.EXE`, a visual test which loads
 `AFNT320.DLL` from the EXE's directory and renders twelve coloured text

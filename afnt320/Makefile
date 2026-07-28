@@ -9,11 +9,12 @@ FONT_SOURCE := font.bin
 FONT_TOOL := tools/font_to_accel.py
 ACCEL_FONT := $(BUILD)/font_accel.bin
 DLL := $(BUILD)/AFNT320.DLL
+RELEASE_DLL := AFNT320.DLL
 RAW_DLL := $(BUILD)/AFNT320.raw.dll
 TEST_SOURCE := test.asm
 TEST_EXE := $(BUILD)/AFNT320.EXE
 
-.PHONY: all clean inspect verify raw test
+.PHONY: all clean inspect verify raw test release
 
 all: $(DLL) $(TEST_EXE)
 
@@ -25,13 +26,16 @@ $(DLL): $(SOURCE) $(ACCEL_FONT)
 	mkdir -p $(BUILD)
 	$(LIBMAN_MKDLL) build $(SOURCE) --format l0 --target 1.2 \
 		--assembler sjasmplus --compress --name "AFNT320 gfx" \
-		--version 1.3 --date 2026-07-27 -o $@
+		--version 1.4 --date 2026-07-28 -o $@
 
 inspect: $(DLL)
 	$(LIBMAN_MKDLL) inspect $(DLL)
 
 verify: $(DLL)
 	$(LIBMAN_MKDLL) verify $(DLL) --target 1.2
+
+release: verify
+	cp $(DLL) $(RELEASE_DLL)
 
 raw: $(DLL)
 	$(LIBMAN_MKDLL) decompress $(DLL) -o $(RAW_DLL)

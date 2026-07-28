@@ -1,3 +1,10 @@
 .DS_Store
 build/
 afnt640/docs/
+specs.md
+!gfx320/specs.md
+cfg/
+snap/sprinter/
+nvram/sprinter_6/rtc
+AGENTS.md
+CLAUDE.md
