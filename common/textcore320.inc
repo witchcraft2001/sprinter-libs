@@ -200,6 +200,9 @@ textcore_prepare_colors:
         cp 0
         ret z
 .rebuild:
+        ; HL is the caller's text pointer. Palette lookup needs a temporary
+        ; HL, but textcore_draw_mapped consumes the original value afterwards.
+        push hl
         ld a,1
         ld (textcore_color_valid),a
         ld a,b
@@ -212,8 +215,14 @@ textcore_prepare_colors:
         rrca
         rrca
         rrca
+        ld hl,textcore_palette_base
+        or (hl)
         ld (textcore_bg_color),a
-        xor c
+        ld b,a
+        ld a,c
+        ld hl,textcore_palette_base
+        or (hl)
+        xor b
         exx
         ld hl,textcore_foreground_buffer
         call textcore_fill_colour_buffer
@@ -221,6 +230,7 @@ textcore_prepare_colors:
         ld hl,textcore_background_buffer
         call textcore_fill_colour_buffer
         exx
+        pop hl
         ret
 
 textcore_fill_colour_buffer:
@@ -245,6 +255,7 @@ textcore_font_base:          dw 0
 textcore_vram_base:          dw 0
 textcore_y_pos:              db 0
 textcore_bg_color:           db 0
+textcore_palette_base:        db 0
 textcore_color_valid:        db 0
 textcore_foreground_buffer:  ds 8,0
 textcore_background_buffer:  ds 8,0

@@ -52,6 +52,70 @@ WIN_WORK_AUTO            equ #ff
 WIN_TXT_ASCIIZ           equ 0
 WIN_TXT_PASCAL           equ 1
 
+; WinTheme (16 bytes).
+WIN_THEME_SIZE           equ 16
+WIN_TH_LIGHT             equ 0
+WIN_TH_SHADOW            equ 1
+WIN_TH_FACE              equ 2
+WIN_TH_DESKTOP           equ 3
+WIN_TH_TEXT              equ 4
+WIN_TH_TEXT_DISABLED     equ 5
+WIN_TH_FIELD_BG          equ 6
+WIN_TH_FIELD_FG          equ 7
+WIN_TH_CURSOR_BG         equ 8
+WIN_TH_CURSOR_FG         equ 9
+WIN_TH_PROGRESS          equ 10
+WIN_TH_PROGRESS_FILL     equ 11
+WIN_TH_SCROLL_TRACK      equ 12
+WIN_TH_SCROLL_THUMB      equ 13
+WIN_TH_FOCUS_MASK        equ 14
+WIN_TH_RESERVED          equ 15
+
+; WinRect (10 bytes).
+WIN_RECT_SIZE            equ 10
+WIN_RC_X                 equ 0
+WIN_RC_Y                 equ 2
+WIN_RC_WIDTH             equ 4
+WIN_RC_HEIGHT            equ 6
+WIN_RC_COLOR             equ 8
+WIN_RC_FLAGS             equ 9
+WIN_RC_SUNKEN            equ #01
+WIN_RC_VERTICAL          equ #02
+
+; WinLabel (12 bytes).
+WIN_LABEL_SIZE           equ 12
+WIN_LBL_X                equ 0
+WIN_LBL_Y                equ 2
+WIN_LBL_WIDTH            equ 4
+WIN_LBL_HEIGHT           equ 6
+WIN_LBL_ATTR             equ 8
+WIN_LBL_FLAGS            equ 9
+WIN_LBL_TEXT             equ 10
+WIN_LABEL_LEFT           equ 0
+WIN_LABEL_CENTER         equ 1
+WIN_LABEL_RIGHT          equ 2
+WIN_LABEL_ALIGN_MASK     equ #03
+WIN_LABEL_FILL           equ #04
+WIN_LABEL_CLIP           equ #08
+
+; WinButton (12 bytes).
+WIN_BUTTON_SIZE          equ 12
+WIN_BTN_X                equ 0
+WIN_BTN_Y                equ 2
+WIN_BTN_WIDTH            equ 4
+WIN_BTN_HEIGHT           equ 6
+WIN_BTN_ATTR             equ 8
+WIN_BTN_FLAGS            equ 9
+WIN_BTN_TEXT             equ 10
+WIN_BTN_GLYPH            equ #01
+WIN_BTN_FOCUS            equ #02
+WIN_BTN_PRESSED          equ #04
+WIN_BTN_DISABLED         equ #08
+
+WIN_STYLE_PALETTE        equ #01
+WIN_STYLE_CLEAR          equ #02
+WIN_STYLE_BOTH           equ #04
+
 WIN_CAP_CORE             equ #0001
 WIN_CAP_EDIT             equ #0002
 WIN_CAP_LISTBOX          equ #0004

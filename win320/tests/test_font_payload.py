@@ -52,11 +52,12 @@ class FontPayloadTests(unittest.TestCase):
             self.assertEqual(expected, offset)
             valid_mask = (0xFF << (8 - width)) & 0xFF
             self.assertEqual(0, columns & ~valid_mask)
-            expected += columns.bit_count() * 8
+            expected += bin(columns).count("1") * 8
         self.assertEqual(len(raw), expected)
 
     def test_release_has_exactly_one_embedded_payload(self) -> None:
         library = (ROOT / "build" / "WIN320.DLL").read_bytes()
+        self.assertEqual(1, int.from_bytes(library[14:16], "little"))
         prefix_size = int.from_bytes(library[2:4], "little")
         payload = library[prefix_size:]
         self.assertEqual(b"WF32", payload[:4])

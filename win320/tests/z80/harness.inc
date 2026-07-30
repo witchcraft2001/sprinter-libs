@@ -5,6 +5,7 @@ TEST_RESULT equ #e000
 TEST_DONE   equ #e001
 TEST_FIRST  equ #e002
 TEST_FAILS  equ #e003
+TEST_LAST   equ #e004
 DONE_MAGIC  equ #a5
 
 t_saved_a: db 0
@@ -15,6 +16,7 @@ t_begin:
         ld (TEST_DONE),a
         ld (TEST_FIRST),a
         ld (TEST_FAILS),a
+        ld (TEST_LAST),a
         ret
 
 t_end:
@@ -43,6 +45,20 @@ t_expect_nz:
         jr t_fail
 
 t_fail:
+        ld (TEST_LAST),a
+        push af
+        push hl
+        push de
+        ld a,(TEST_FAILS)
+        ld e,a
+        ld d,0
+        ld hl,#e010
+        add hl,de
+        ld a,(TEST_LAST)
+        ld (hl),a
+        pop de
+        pop hl
+        pop af
         push af
         push hl
         ld hl,TEST_RESULT

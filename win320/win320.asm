@@ -1,4 +1,4 @@
-; WIN320.DLL — stage 0 runtime and embedded accelerator font loader.
+; WIN320.DLL — stage 1 runtime, primitives and static controls.
 ; Public ABI is described in specs.md and win320.inc.
 
         ifndef WIN320_TEST_BUILD
@@ -21,19 +21,19 @@
         jp win_set_screen           ; 3
         jp win_get_version          ; 4
         jp win_get_config           ; 5
-        jp win_reserved             ; 6
-        jp win_reserved             ; 7
-        jp win_reserved             ; 8
-        jp win_reserved             ; 9
-        jp win_reserved             ; 10
-        jp win_reserved             ; 11
-        jp win_reserved             ; 12
-        jp win_reserved             ; 13
-        jp win_reserved             ; 14
-        jp win_reserved             ; 15
-        jp win_reserved             ; 16
-        jp win_reserved             ; 17
-        jp win_reserved             ; 18
+        jp win_load_font            ; 6
+        jp win_set_theme            ; 7
+        jp win_set_text_format      ; 8
+        jp win_set_origin           ; 9
+        jp win_style                ; 10
+        jp win_fill_rect            ; 11
+        jp win_frame                ; 12
+        jp win_panel                ; 13
+        jp win_separator            ; 14
+        jp win_invert_rect          ; 15
+        jp win_focus_rect           ; 16
+        jp win_label                ; 17
+        jp win_button               ; 18
         jp win_reserved             ; 19
         jp win_reserved             ; 20
         jp win_reserved             ; 21
@@ -58,11 +58,15 @@
 
 PAGE_PORT0              equ #82
 YPORT                   equ #89
+DSS_OPEN                equ #11
+DSS_CLOSE               equ #12
 DSS_READ                equ #13
 DSS_GETMEM              equ #3d
 DSS_FREEMEM             equ #3e
 BIOS_GETMEMBLKPAGES     equ #c5
 FONT_STAGE_SIZE         equ 128
+VIDEO_PAGE              equ #50
+SCREEN_STRIDE           equ #0140
 
 ; ---- public stage-0 entry points ------------------------------------------
 
@@ -71,6 +75,9 @@ win_init:
         ld a,#ff
         ld (font_block),a
         ld (font_page),a
+        ld (temp_font_block),a
+        ld (temp_font_page),a
+        ld (old_font_block),a
         ld (data_window),a
         ld (vram_window),a
         xor a
@@ -82,6 +89,12 @@ win_init:
         ld (backstore_pages),a
         ld (backstore_depth),a
         ld (textcore_color_valid),a
+        ld a,#f0
+        ld (textcore_palette_base),a
+        ld hl,default_theme
+        ld de,current_theme
+        ld bc,WIN_THEME_SIZE
+        ldir
         ld a,#c0
         out (YPORT),a
 
@@ -108,15 +121,15 @@ win_init:
         ld hl,io_scratch
         ld de,WF32_HEADER_SIZE
         call read_payload
-        jr c,.font_cleanup
+        jp c,.font_cleanup
         ld a,d
         or a
-        jr nz,.font_cleanup
+        jp nz,.font_cleanup
         ld a,e
         cp WF32_HEADER_SIZE
-        jr nz,.font_cleanup
+        jp nz,.font_cleanup
         call validate_wf32_header
-        jr c,.font_cleanup
+        jp c,.font_cleanup
 
         xor a
         ld (copy_offset),a
@@ -173,6 +186,7 @@ win_init:
 .validate:
         call validate_loaded_font
         jr c,.font_cleanup
+        call cache_loaded_font_widths
         xor a
         scf
         ccf
@@ -195,6 +209,8 @@ win_init:
         ret
 
 win_free:
+        call s1_release_temp_font
+        call s1_release_old_font
         call release_font_page
         ld a,#c0
         out (YPORT),a
@@ -258,7 +274,7 @@ win_set_screen:
 win_get_version:
         ld d,1
         ld e,0
-        ld ix,0
+        ld ix,WIN_CAP_PASCAL_STR
         xor a
         scf
         ccf
@@ -297,6 +313,8 @@ win_get_config:
         ld a,WIN_ERR_ARGUMENT
         or a
         ret
+
+        include "stage1.inc"
 
 win_reserved:
         ld a,WIN_ERR_UNSUPPORTED
@@ -416,9 +434,8 @@ build_config:
         ld (config_buffer+10),a
         ld a,FONT320_HEIGHT
         ld (config_buffer+11),a
-        xor a
-        ld (config_buffer+12),a
-        ld (config_buffer+13),a
+        ld hl,WIN_CAP_PASCAL_STR
+        ld (config_buffer+12),hl
         ld a,(font_page)
         ld (config_buffer+14),a
         ld a,(data_window)
@@ -655,6 +672,16 @@ load_validation_tables:
         ldir
         jp unmap_font_page
 
+cache_loaded_font_widths:
+        call map_font_page
+        ld hl,(work_base)
+        ld de,WF32_HEADER_SIZE+FONT320_WIDTHS
+        add hl,de
+        ld de,font_width_cache
+        ld bc,FONT320_GLYPHS
+        ldir
+        jp unmap_font_page
+
 map_font_page:
         ld a,i
         jp po,.interrupts_off
@@ -671,6 +698,8 @@ map_font_page:
         jp write_work_page
 
 unmap_font_page:
+        ld a,#c0
+        out (YPORT),a
         ld a,(saved_work_page)
         call write_work_page
         ld a,(saved_iff)
@@ -763,6 +792,7 @@ config_dest:            dw 0
 config_count:           db 0
 config_buffer:          ds WIN_CONFIG_SIZE,0
 io_scratch:             ds FONT_STAGE_SIZE,0
+font_width_cache:       ds FONT320_GLYPHS,0
 
 font_width_masks:
         db #80,#c0,#e0,#f0,#f8,#fc,#fe,#ff

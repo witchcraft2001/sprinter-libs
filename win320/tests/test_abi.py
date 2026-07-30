@@ -23,7 +23,7 @@ def equates() -> dict[str, int]:
 
 
 class AbiTests(unittest.TestCase):
-    def test_stage0_entries_and_frozen_table(self) -> None:
+    def test_stage1_entries_and_frozen_table(self) -> None:
         values = equates()
         self.assertEqual(0, values["WIN_INIT"])
         self.assertEqual(5, values["WIN_GET_CONFIG"])
@@ -36,7 +36,23 @@ class AbiTests(unittest.TestCase):
             r"^\s+jp\s+([a-zA-Z0-9_]+)\s+;\s*(\d+)", source, re.MULTILINE
         )
         self.assertEqual(list(range(37)), [int(number) for _, number in dispatch])
-        self.assertTrue(all(label == "win_reserved" for label, _ in dispatch[6:]))
+        expected_stage1 = [
+            "win_load_font",
+            "win_set_theme",
+            "win_set_text_format",
+            "win_set_origin",
+            "win_style",
+            "win_fill_rect",
+            "win_frame",
+            "win_panel",
+            "win_separator",
+            "win_invert_rect",
+            "win_focus_rect",
+            "win_label",
+            "win_button",
+        ]
+        self.assertEqual(expected_stage1, [label for label, _ in dispatch[6:19]])
+        self.assertTrue(all(label == "win_reserved" for label, _ in dispatch[19:]))
 
     def test_error_and_config_layout(self) -> None:
         values = equates()
@@ -47,6 +63,36 @@ class AbiTests(unittest.TestCase):
         self.assertEqual(0, values["WIN_CFG_STRUCT_SIZE"])
         self.assertEqual(14, values["WIN_CFG_FONT_PAGE"])
         self.assertEqual(19, values["WIN_CFG_TEXT_FORMAT"])
+
+    def test_stage1_structure_layout_and_flags(self) -> None:
+        values = equates()
+        self.assertEqual(16, values["WIN_THEME_SIZE"])
+        self.assertEqual(14, values["WIN_TH_FOCUS_MASK"])
+        self.assertEqual(15, values["WIN_TH_RESERVED"])
+
+        self.assertEqual(10, values["WIN_RECT_SIZE"])
+        self.assertEqual(0, values["WIN_RC_X"])
+        self.assertEqual(8, values["WIN_RC_COLOR"])
+        self.assertEqual(9, values["WIN_RC_FLAGS"])
+        self.assertEqual(0x01, values["WIN_RC_SUNKEN"])
+        self.assertEqual(0x02, values["WIN_RC_VERTICAL"])
+
+        self.assertEqual(12, values["WIN_LABEL_SIZE"])
+        self.assertEqual(10, values["WIN_LBL_TEXT"])
+        self.assertEqual(0x03, values["WIN_LABEL_ALIGN_MASK"])
+        self.assertEqual(0x04, values["WIN_LABEL_FILL"])
+        self.assertEqual(0x08, values["WIN_LABEL_CLIP"])
+
+        self.assertEqual(12, values["WIN_BUTTON_SIZE"])
+        self.assertEqual(10, values["WIN_BTN_TEXT"])
+        self.assertEqual(0x01, values["WIN_BTN_GLYPH"])
+        self.assertEqual(0x02, values["WIN_BTN_FOCUS"])
+        self.assertEqual(0x04, values["WIN_BTN_PRESSED"])
+        self.assertEqual(0x08, values["WIN_BTN_DISABLED"])
+
+        self.assertEqual(0x01, values["WIN_STYLE_PALETTE"])
+        self.assertEqual(0x02, values["WIN_STYLE_CLEAR"])
+        self.assertEqual(0x04, values["WIN_STYLE_BOTH"])
 
     def test_window_detection_masks_address(self) -> None:
         source = (ROOT / "win320.asm").read_text()
@@ -85,6 +131,22 @@ class AbiTests(unittest.TestCase):
         self.assertIn('INCLUDE\t"../common/textcore320.inc"', source)
         self.assertIn("CALL\ttextcore_draw_mapped", source)
         self.assertIn("LD\t(textcore_font_base),HL", source)
+
+        core = (REPO / "common" / "textcore320.inc").read_text()
+        self.assertIn("textcore_palette_base:", core)
+        self.assertIn("or (hl)", core)
+
+    def test_stage1_capabilities_do_not_claim_core(self) -> None:
+        source = (ROOT / "win320.asm").read_text()
+        self.assertIn(
+            "dw #0001                    ; implementation 0.1",
+            source,
+        )
+        version = source.split("win_get_version:", 1)[1].split(
+            "win_get_config:", 1
+        )[0]
+        self.assertIn("ld ix,WIN_CAP_PASCAL_STR", version)
+        self.assertNotIn("WIN_CAP_CORE", version)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+import re
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+REPO = ROOT.parent
+STAGE1 = (ROOT / "stage1.inc").read_text()
+HARNESS = (ROOT / "tests" / "z80" / "t_stage1.asm").read_text()
+
+
+class Stage1ContractTests(unittest.TestCase):
+    def test_default_theme_and_ega_palette_are_complete(self) -> None:
+        match = re.search(
+            r"default_theme:\s*db\s+([^\n]+)\s*db\s+([^\n]+)", STAGE1
+        )
+        self.assertIsNotNone(match)
+        tokens = ",".join(match.groups()).replace(" ", "").split(",")
+        values = [int(token[1:], 16) if token.startswith("#") else int(token)
+                  for token in tokens]
+        self.assertEqual([15, 7, 8, 1, 0, 7, 15, 0,
+                          1, 15, 7, 1, 7, 8, 15, 0], values)
+
+        palette = STAGE1.split("ega_palette:", 1)[1]
+        rgb = re.findall(r"#[0-9a-fA-F]{2}", palette)
+        self.assertEqual(16 * 3, len(rgb))
+
+    def test_origin_bounds_use_full_width_arithmetic(self) -> None:
+        rect = STAGE1.split("s1_load_rect:", 1)[1].split(
+            "s1_require_frame_size:", 1
+        )[0]
+        for token in (
+            "ld de,(origin_x)",
+            "ld de,(rect_w)",
+            "ld de,321",
+            "ld a,(origin_y)",
+            "ld de,(rect_h)",
+            "ld de,257",
+        ):
+            self.assertIn(token, rect)
+        self.assertGreaterEqual(rect.count("jr c,.bad"), 4)
+
+    def test_font_replacement_is_published_after_validation_and_close(self) -> None:
+        loader = STAGE1.split("win_load_font:", 1)[1].split(
+            "s1_read_wf32:", 1
+        )[0]
+        order = [
+            "call s1_read_wf32",
+            "ld c,DSS_CLOSE",
+            "call cache_loaded_font_widths",
+            "ld (font_block),a",
+        ]
+        position = 0
+        for token in order:
+            found = loader.find(token, position)
+            self.assertNotEqual(-1, found, token)
+            position = found + len(token)
+        self.assertIn("call s1_release_temp_font", loader)
+
+    def test_string_formats_share_one_bounded_scratch_path(self) -> None:
+        copier = STAGE1.split("s1_copy_public_string:", 1)[1].split(
+            "s1_validate_optional_range:", 1
+        )[0]
+        self.assertIn("ld b,#ff", copier)
+        self.assertIn(".pascal:", copier)
+        self.assertIn("ld de,text_scratch", copier)
+        self.assertIn("ld (de),a", copier)
+
+    def test_text_palette_rebuild_preserves_source_and_clip_stays_bounded(self) -> None:
+        core = (REPO / "common" / "textcore320.inc").read_text()
+        prepare = core.split("textcore_prepare_colors:", 1)[1].split(
+            "textcore_fill_colour_buffer:", 1
+        )[0]
+        rebuild = prepare.split(".rebuild:", 1)[1]
+        self.assertIn("push hl", rebuild)
+        self.assertIn("pop hl", rebuild)
+
+        clip = STAGE1.split("s1_clip_text:", 1)[1].split(
+            "s1_resolve_text_attr:", 1
+        )[0]
+        self.assertIn("ld (text_scratch+253),a", clip)
+
+    def test_clip_and_button_minimums_are_locked_by_z80_tests(self) -> None:
+        self.assertIn("dw 1,255,256,257,320", HARNESS)
+        self.assertIn("call win_invert_rect", HARNESS)
+        self.assertGreaterEqual(HARNESS.count("call win_invert_rect"), 2)
+        self.assertIn("ld de,6", STAGE1)
+        self.assertIn("ld de,10", STAGE1)
+        self.assertIn("call s1_clip_text", STAGE1)
+
+    def test_mapping_restores_vram_then_data_and_port_y(self) -> None:
+        unmap = STAGE1.split("s1_unmap_pair:", 1)[1].split(
+            "; ---- geometry validation", 1
+        )[0]
+        sequence = [
+            "ld a,#c0",
+            "out (YPORT),a",
+            "ld a,(saved_vram_page)",
+            "ld a,(saved_data_page)",
+            "jp s1_restore_iff",
+        ]
+        position = 0
+        for token in sequence:
+            found = unmap.find(token, position)
+            self.assertNotEqual(-1, found, token)
+            position = found + len(token)
+
+    def test_production_accelerator_sequences_end_idle(self) -> None:
+        hfill = STAGE1.split("s1_hfill_chunk:", 1)[1].split(
+            "; HL=x address", 1
+        )[0]
+        self.assertRegex(
+            hfill,
+            r"ld d,d\s+s1_hfill_size:\s+ld a,0\s+ld c,c"
+            r"\s+ld a,c\s+ld \(hl\),a\s+ld b,b",
+        )
+
+        xor = STAGE1.split("s1_xor_chunk:", 1)[1].split(
+            "s1_invert_mapped:", 1
+        )[0]
+        self.assertRegex(
+            xor,
+            r"ld l,l\s+ld a,\(de\)\s+xor \(hl\)"
+            r"\s+ld \(hl\),a\s+ld b,b",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
