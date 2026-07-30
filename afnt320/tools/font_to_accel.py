@@ -2,14 +2,10 @@
 """Convert the compact gfxview font to accelerator-friendly columns."""
 
 from pathlib import Path
-import sys
+import argparse
 
 
-def main() -> None:
-    if len(sys.argv) != 3:
-        raise SystemExit("usage: font_to_accel.py INPUT OUTPUT")
-
-    source = Path(sys.argv[1]).read_bytes()
+def convert_font(source: bytes) -> tuple[bytes, int]:
     if len(source) != 256 + 8 * 256:
         raise SystemExit(f"expected a 2304-byte gfxview font, got {len(source)}")
 
@@ -47,11 +43,28 @@ def main() -> None:
     result.extend(offset >> 8 for offset in offsets)
     result.extend(column_maps)
     result.extend(bitmap)
-    Path(sys.argv[2]).write_bytes(result)
+    return bytes(result), blank_columns
 
+
+def wrap_wf32(data: bytes) -> bytes:
+    if len(data) > 0x3FF8:
+        raise SystemExit("WF32 data does not fit in one 16K page")
+    return b"WF32" + bytes((1, 8)) + len(data).to_bytes(2, "little") + data
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--wf32", action="store_true")
+    parser.add_argument("input", type=Path)
+    parser.add_argument("output", type=Path)
+    args = parser.parse_args()
+
+    data, blank_columns = convert_font(args.input.read_bytes())
+    result = wrap_wf32(data) if args.wf32 else data
+    args.output.write_bytes(result)
     print(
-        f"created {sys.argv[2]}: {len(result)} bytes, "
-        f"{len(bitmap)} bytes of column masks, "
+        f"created {args.output}: {len(result)} bytes, "
+        f"{len(data) - 1024} bytes of column masks, "
         f"{blank_columns} blank columns elided"
     )
 

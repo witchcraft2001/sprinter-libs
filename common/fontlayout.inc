@@ -1,0 +1,16 @@
+        ifndef FONTLAYOUT320_INC
+FONTLAYOUT320_INC equ 1
+
+FONT320_GLYPHS          equ 256
+FONT320_HEIGHT          equ 8
+FONT320_WIDTHS          equ 0
+FONT320_OFFSETS_LO      equ 256
+FONT320_OFFSETS_HI      equ 512
+FONT320_COLUMN_MAPS     equ 768
+FONT320_BITMAP          equ 1024
+
+WF32_HEADER_SIZE        equ 8
+WF32_VERSION            equ 1
+WF32_MAX_DATA_SIZE      equ #3ff8
+
+        endif

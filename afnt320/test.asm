@@ -154,8 +154,8 @@ lines:
         dw 0
 info:           ds      32
 
-; See the AFNT640 test for why this uses the current libman 1.3 loader.
-        include "../../../sprinter-rtl8019a/src/lib/libman13.asm"
+; Canonical libman 1.3 loader, resolved through Makefile's LIBMAN_DIR.
+        include "libman13.asm"
 
 load_library:
         xor     a

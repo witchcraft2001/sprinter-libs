@@ -10,6 +10,8 @@
 
 			ORG	0x0000
 
+			INCLUDE	"../common/fontlayout.inc"
+
 			DB	"L0"
 			DW	0			; loaded size (filled by sprinter-mkdll)
 			DW	0			; uncompressed code size
@@ -50,7 +52,9 @@ init:
 			CALL	configure_window
 			XOR	A
 			LD	(screen_id),A
-			LD	(color_valid),A
+			LD	(textcore_color_valid),A
+			LD	HL,my_font
+			LD	(textcore_font_base),HL
 			RET
 
 free:
@@ -240,267 +244,38 @@ clear_screen_320_column:
 ; glyph column.  The AND/XOR pipeline turns that mask into foreground and
 ; background palette indices, then COPY_VERT writes all eight pixels at once.
 
+
+; AFNT320 owns mapping and interrupt state. The shared core only renders into
+; the already mapped font and VRAM pages.
 text_out_320:
-			PUSH	IX
-			PUSH	IY
+			PUSH	HL
 			PUSH	DE
-			POP	IX			; IX = current X
-			LD	B,A
-			LD	A,C
-			LD	(y_pos),A
+			PUSH	BC
+			DI
 			CALL	read_page
 			LD	(saved_page),A
-			CALL	prepare_colors_320
 			CALL	select_video_page
-
-			; Alternate BC is the destination X address; alternate HL/DE
-			; permanently point at the two eight-byte colour buffers.
-			PUSH	DE
-			EXX
-			POP	BC
 			LD	HL,(vram_base)
 			LD	A,(screen_id)
 			OR	A
-			JR	Z,text_out_320_base_ready
+			JR	Z,text_out_320_base_ready_shared
 			LD	DE,SCREEN_STRIDE
 			ADD	HL,DE
-text_out_320_base_ready:
-			ADD	HL,BC
-			LD	B,H
-			LD	C,L
-			LD	HL,foreground_buffer
-			LD	DE,background_buffer
-			EXX
-			LD	C,L
-			LD	B,H			; main BC = ASCIIZ string
-
-			; Select the inner loop once per string.  With background zero,
-			; mask AND foreground already produces the final pixels, so the
-			; background XOR pass is unnecessary.
-			LD	A,(bg_color)
-			OR	A
-			LD	HL,text_out_320_columns_general
-			JR	NZ,text_out_320_dispatch_ready
-			LD	HL,text_out_320_columns_black
-text_out_320_dispatch_ready:
-			LD	(text_out_320_dispatch+1),HL
-
-			; Clip the vertical block at the bottom edge.  Patch the immediate
-			; used by SET_BUFFER so no ordinary memory read occurs while the
-			; accelerator is accepting its count.
-			LD	A,(y_pos)
-			CP	248
-			JR	C,text_out_320_rows8
-			NEG
-			JR	text_out_320_rows_ready
-text_out_320_rows8:
-			LD	A,8
-text_out_320_rows_ready:
-			LD	(text_out_320_height+1),A
-			DI
-			LD	D,D			; SET_BUFFER
-text_out_320_height:
-			LD	A,8
-			LD	B,B			; OFF
-			LD	A,(BC)
-			INC	BC
-			OR	A
-			JP	Z,text_out_320_done
-
-text_out_320_char:
-			PUSH	BC
-			LD	BC,my_font
-			LD	L,A
-			LD	H,0
-			ADD	HL,BC
-			LD	B,(HL)			; glyph width
-			LD	IYL,B			; preserve the unclipped advance
-			INC	H
-			LD	E,(HL)			; bitmap offset, low
-			INC	H
-			LD	D,(HL)			; bitmap offset, high
-			INC	H
-			LD	A,(HL)			; bit 7..0: non-empty columns
-			LD	IYH,A
-			LD	HL,my_font
-			ADD	HL,DE
-			LD	DE,8			; bytes per vertical column
-
-			; Clip only the final glyph that crosses X=320.  Once cursor_x is
-			; beyond that edge, later glyphs can be skipped immediately.
-			LD	A,IXH
-			OR	A
-			JR	Z,text_out_320_width_ready
-			CP	1
-			JR	NZ,text_out_320_skip_glyph
-			LD	A,IXL
-			CP	0x40
-			JR	NC,text_out_320_skip_glyph
-			LD	C,A
-			LD	A,0x40
-			SUB	C
-			CP	B
-			JR	NC,text_out_320_width_ready
-			LD	B,A
-text_out_320_width_ready:
-			LD	A,B
-			OR	A
-			JR	Z,text_out_320_skip_glyph
-			LD	C,IYH
-
-text_out_320_dispatch:
-			JP	text_out_320_columns_general
-
-; General colour path:
-;   background XOR (mask AND (foreground XOR background))
-text_out_320_columns_general:
-			RLC	C
-			JR	NC,text_out_320_column_blank_general
-			LD	L,L			; COPY mask column to accelerator RAM
-			LD	A,(HL)
-			LD	B,B			; OFF
-			EXX
-			LD	A,(y_pos)
-			OUT	(YPORT),A
-			LD	L,L			; COPY foreground XOR background
-			AND	(HL)
-			LD	B,B
-			EX	DE,HL
-			LD	L,L			; COPY background block
-			XOR	(HL)
-			LD	A,A			; COPY_VERT result to VRAM
-			LD	(BC),A
-			LD	B,B
-			EX	DE,HL
-			INC	BC			; next screen X
-			EXX
-			ADD	HL,DE			; next eight-byte mask column
-			DJNZ	text_out_320_columns_general
-			JR	text_out_320_skip_glyph
-
-text_out_320_column_blank_general:
-			EXX
-			LD	A,(y_pos)
-			OUT	(YPORT),A
-			LD	A,(bg_color)
-			LD	E,E			; FILL_VERT background
-			LD	(BC),A
-			LD	B,B
-			INC	BC
-			EXX
-			DJNZ	text_out_320_columns_general
-			JR	text_out_320_skip_glyph
-
-; Black-background path:
-;   mask AND foreground
-; This removes one complete eight-byte accelerator pass per non-empty column.
-text_out_320_columns_black:
-			RLC	C
-			JR	NC,text_out_320_column_blank_black
-			LD	L,L			; COPY mask column to accelerator RAM
-			LD	A,(HL)
-			LD	B,B
-			EXX
-			LD	A,(y_pos)
-			OUT	(YPORT),A
-			LD	L,L			; COPY foreground block
-			AND	(HL)
-			LD	A,A			; COPY_VERT result to VRAM
-			LD	(BC),A
-			LD	B,B
-			INC	BC
-			EXX
-			ADD	HL,DE
-			DJNZ	text_out_320_columns_black
-			JR	text_out_320_skip_glyph
-
-text_out_320_column_blank_black:
-			EXX
-			LD	A,(y_pos)
-			OUT	(YPORT),A
-			XOR	A
-			LD	E,E			; FILL_VERT black background
-			LD	(BC),A
-			LD	B,B
-			INC	BC
-			EXX
-			DJNZ	text_out_320_columns_black
-
-text_out_320_skip_glyph:
+text_out_320_base_ready_shared:
+			LD	(textcore_vram_base),HL
 			POP	BC
-			LD	E,IYL
-			LD	D,0
-			ADD	IX,DE
-			LD	A,(BC)
-			INC	BC
-			OR	A
-			JP	NZ,text_out_320_char
-
-text_out_320_done:
-			LD	B,B			; accelerator OFF
-			EI
-			LD	L,C
-			LD	H,B
+			POP	DE
+			POP	HL
+			LD	A,(print_color)
+			CALL	textcore_draw_mapped
 			LD	A,(saved_page)
 			CALL	write_page
 			LD	A,0xC0
 			OUT	(YPORT),A
-			POP	IY
-			POP	IX
+			EI
 			RET
 
-; Build the two eight-byte operands used by the mask pipeline:
-;   result = background XOR (mask AND (foreground XOR background))
-prepare_colors_320:
-			LD	A,(color_valid)
-			OR	A
-			JR	Z,prepare_colors_320_rebuild
-			LD	A,B
-prepare_colors_320_prev:
-			CP	0
-			RET	Z
-prepare_colors_320_rebuild:
-			LD	A,1
-			LD	(color_valid),A
-			LD	A,B
-			LD	(prepare_colors_320_prev+1),A
-			AND	0x0F
-			LD	C,A			; foreground
-			LD	A,B
-			AND	0xF0
-			RRCA
-			RRCA
-			RRCA
-			RRCA
-			LD	(bg_color),A
-			XOR	C			; foreground XOR background
-			EXX
-			LD	HL,foreground_buffer
-			CALL	fill_colour_buffer
-			LD	A,(bg_color)
-			LD	HL,background_buffer
-			CALL	fill_colour_buffer
-			EXX
-			RET
-
-; Active in the alternate register set.  Fill eight bytes at HL with A.
-fill_colour_buffer:
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			INC	HL
-			LD	(HL),A
-			RET
+			INCLUDE	"../common/textcore320.inc"
 
 ; ---------------------------------------------------------------------------
 ; Runtime state and generated accelerator font.
@@ -514,11 +289,6 @@ screen_id:	DB	0
 saved_page:	DB	0
 y_pos:		DB	0
 print_color:	DB	0
-bg_color:	DB	0
-color_valid:	DB	0
-
-foreground_buffer:	DS	8,0
-background_buffer:	DS	8,0
 
 ; EGA-compatible palette, four bytes per entry (B,G,R,Y).
 custom_palette:

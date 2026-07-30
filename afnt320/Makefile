@@ -3,6 +3,8 @@ SHELL := /bin/sh
 SJASMPLUS ?= sjasmplus
 PYTHON ?= python3
 LIBMAN_MKDLL ?= ../../libman/.venv/bin/sprinter-mkdll
+LIBMAN_DIR ?= ../../libman/libman
+BUILD_DATE ?= $(shell date +%Y-%m-%d)
 BUILD ?= build
 SOURCE := afnt320.asm
 FONT_SOURCE := font.bin
@@ -22,11 +24,11 @@ $(ACCEL_FONT): $(FONT_SOURCE) $(FONT_TOOL)
 	mkdir -p $(BUILD)
 	$(PYTHON) $(FONT_TOOL) $(FONT_SOURCE) $@
 
-$(DLL): $(SOURCE) $(ACCEL_FONT)
+$(DLL): $(SOURCE) $(ACCEL_FONT) ../common/fontlayout.inc ../common/textcore320.inc
 	mkdir -p $(BUILD)
 	$(LIBMAN_MKDLL) build $(SOURCE) --format l0 --target 1.2 \
 		--assembler sjasmplus --compress --name "AFNT320 gfx" \
-		--version 1.4 --date 2026-07-28 -o $@
+		--version 1.4 --date $(BUILD_DATE) -o $@
 
 inspect: $(DLL)
 	$(LIBMAN_MKDLL) inspect $(DLL)
@@ -34,7 +36,7 @@ inspect: $(DLL)
 verify: $(DLL)
 	$(LIBMAN_MKDLL) verify $(DLL) --target 1.2
 
-release: verify
+release: all verify
 	cp $(DLL) $(RELEASE_DLL)
 
 raw: $(DLL)
@@ -42,9 +44,9 @@ raw: $(DLL)
 
 test: $(TEST_EXE)
 
-$(TEST_EXE): $(TEST_SOURCE) $(DLL) ../../../sprinter-rtl8019a/src/lib/libman13.asm
+$(TEST_EXE): $(TEST_SOURCE) $(DLL) $(LIBMAN_DIR)/libman13.asm
 	mkdir -p $(BUILD)
-	$(SJASMPLUS) --raw=$@ $(TEST_SOURCE)
+	$(SJASMPLUS) --inc="$(LIBMAN_DIR)" --raw=$@ $(TEST_SOURCE)
 
 clean:
 	rm -f $(BUILD)/AFNT320.DLL $(BUILD)/AFNT320.raw.dll \
