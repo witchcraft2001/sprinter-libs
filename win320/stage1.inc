@@ -851,10 +851,10 @@ s1_hfill_size:
 
 ; HL=x address, A=y, C=height (0 means 256).
 s1_vfill_chunk:
-        ld (line_y),a
+        ld (fill_current_y),a
         ld a,c
         ld (s1_vfill_size+1),a
-        ld a,(line_y)
+        ld a,(fill_current_y)
         out (YPORT),a
         ld a,(fill_color)
         ld e,a
@@ -927,11 +927,11 @@ s1_fill_mapped:
         ld hl,(fill_h)
         ld (fill_rows_left),hl
         ld a,(fill_y)
-        ld (line_y),a
+        ld (fill_current_y),a
 .row:
         ld hl,(fill_x)
         call s1_make_dest
-        ld a,(line_y)
+        ld a,(fill_current_y)
         out (YPORT),a
         ld de,(fill_w)
         ld (fill_bytes_left),de
@@ -960,9 +960,9 @@ s1_fill_mapped:
         jr .chunk
 .last:
         call s1_hfill_chunk
-        ld a,(line_y)
+        ld a,(fill_current_y)
         inc a
-        ld (line_y),a
+        ld (fill_current_y),a
         ld hl,(fill_rows_left)
         dec hl
         ld (fill_rows_left),hl
@@ -977,7 +977,7 @@ s1_fill_mapped_test:
         ld hl,(fill_h)
         ld (fill_rows_left),hl
         ld a,(fill_y)
-        ld (line_y),a
+        ld (fill_current_y),a
 .row:
         out (YPORT),a
         ld hl,(fill_x)
@@ -991,15 +991,15 @@ s1_fill_mapped_test:
         ld a,b
         or c
         jr nz,.pixel
-        ld a,(line_y)
+        ld a,(fill_current_y)
         inc a
-        ld (line_y),a
+        ld (fill_current_y),a
         ld hl,(fill_rows_left)
         dec hl
         ld (fill_rows_left),hl
         ld a,h
         or l
-        ld a,(line_y)
+        ld a,(fill_current_y)
         jr nz,.row
         ret
         endif
@@ -1890,6 +1890,29 @@ win_label:
         call s1_copy_caller_block
         or a
         ret nz
+s1_label_loaded:
+        call s1_label_prepare_loaded
+        or a
+        ret nz
+        call s1_resolve_pair
+        or a
+        ret nz
+        call s1_map_pair
+        ld a,(label_flags)
+        and WIN_LABEL_FILL
+        call nz,s1_label_fill_mapped
+        ld hl,text_scratch
+        ld de,(text_x)
+        ld bc,(text_y)
+        ld a,(text_attr)
+        call textcore_draw_mapped
+        call s1_unmap_pair
+        xor a
+        ret
+
+; Validate and prepare the descriptor already copied to label_scratch.
+; Modal preflight reuses this path to measure the exact rendered bounds.
+s1_label_prepare_loaded:
         ld a,(label_scratch+WIN_LBL_FLAGS)
         and #f0
         jp nz,.unsupported
@@ -1932,19 +1955,6 @@ win_label:
         call s1_measure_text
         call s1_clip_text
         call s1_label_position
-        call s1_resolve_pair
-        or a
-        ret nz
-        call s1_map_pair
-        ld a,(label_flags)
-        and WIN_LABEL_FILL
-        call nz,s1_label_fill_mapped
-        ld hl,text_scratch
-        ld de,(text_x)
-        ld bc,(text_y)
-        ld a,(text_attr)
-        call textcore_draw_mapped
-        call s1_unmap_pair
         xor a
         ret
 .unsupported:
@@ -2009,6 +2019,11 @@ win_button:
         call s1_copy_caller_block
         or a
         ret nz
+        jp s1_button_loaded
+
+; Draw the descriptor already copied to button_scratch. Stage 2 uses this
+; path to derive WIN_BTN_DISABLED without mutating the caller's descriptor.
+s1_button_loaded:
         ld a,(button_scratch+WIN_BTN_FLAGS)
         and #f0
         jp nz,.unsupported
@@ -2302,6 +2317,7 @@ fill_h:                 dw 0
 fill_columns_left:      dw 0
 fill_rows_left:         dw 0
 fill_bytes_left:        dw 0
+fill_current_y:         db 0
 line_x:                 dw 0
 line_y:                 dw 0
 line_len:               dw 0

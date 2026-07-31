@@ -573,6 +573,15 @@ test_other_entries:
         or a
         ld a,43
         call t_expect_z
+        ; The fill row cursor must not advance the line helper coordinate:
+        ; win_separator itself increments it exactly once, so its two rows
+        ; are adjacent at y=20 and y=21.
+        ld hl,(line_y)
+        ld de,21
+        or a
+        sbc hl,de
+        ld a,55
+        call t_expect_z
         ld hl,10
         ld (rect+WIN_RC_HEIGHT),hl
         ld a,#55

@@ -88,6 +88,14 @@ class Stage1ContractTests(unittest.TestCase):
         self.assertIn("ld de,6", STAGE1)
         self.assertIn("ld de,10", STAGE1)
         self.assertIn("call s1_clip_text", STAGE1)
+        self.assertIn("are adjacent at y=20 and y=21", HARNESS)
+
+    def test_fill_row_cursor_does_not_modify_line_helper_coordinates(self) -> None:
+        fill = STAGE1.split("s1_fill_mapped:", 1)[1].split(
+            "; Draw one horizontal line", 1
+        )[0]
+        self.assertIn("fill_current_y", fill)
+        self.assertNotIn("ld (line_y),a", fill)
 
     def test_mapping_restores_vram_then_data_and_port_y(self) -> None:
         unmap = STAGE1.split("s1_unmap_pair:", 1)[1].split(

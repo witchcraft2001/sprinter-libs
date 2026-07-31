@@ -1,4 +1,4 @@
-; WIN320.DLL — stage 1 runtime, primitives and static controls.
+; WIN320.DLL — stage 2 windows, dirty update and modal backstore.
 ; Public ABI is described in specs.md and win320.inc.
 
         ifndef WIN320_TEST_BUILD
@@ -34,12 +34,12 @@
         jp win_focus_rect           ; 16
         jp win_label                ; 17
         jp win_button               ; 18
-        jp win_reserved             ; 19
-        jp win_reserved             ; 20
-        jp win_reserved             ; 21
-        jp win_reserved             ; 22
-        jp win_reserved             ; 23
-        jp win_reserved             ; 24
+        jp win_draw                 ; 19
+        jp win_draw_item            ; 20
+        jp win_update               ; 21
+        jp win_set_backstore        ; 22
+        jp win_open                 ; 23
+        jp win_close                ; 24
         jp win_reserved             ; 25
         jp win_reserved             ; 26
         jp win_reserved             ; 27
@@ -88,6 +88,9 @@ win_init:
         ld (text_format),a
         ld (backstore_pages),a
         ld (backstore_depth),a
+        ld (backstore_alloc_page),a
+        ld (backstore_alloc_offset),a
+        ld (backstore_alloc_offset+1),a
         ld (textcore_color_valid),a
         ld a,#f0
         ld (textcore_palette_base),a
@@ -209,9 +212,16 @@ win_init:
         ret
 
 win_free:
+        call s2_close_all
         call s1_release_temp_font
         call s1_release_old_font
         call release_font_page
+        xor a
+        ld (backstore_pages),a
+        ld (backstore_depth),a
+        ld (backstore_alloc_page),a
+        ld (backstore_alloc_offset),a
+        ld (backstore_alloc_offset+1),a
         ld a,#c0
         out (YPORT),a
         xor a
@@ -315,6 +325,7 @@ win_get_config:
         ret
 
         include "stage1.inc"
+        include "stage2.inc"
 
 win_reserved:
         ld a,WIN_ERR_UNSUPPORTED

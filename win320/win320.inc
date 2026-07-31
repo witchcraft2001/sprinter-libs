@@ -112,6 +112,58 @@ WIN_BTN_FOCUS            equ #02
 WIN_BTN_PRESSED          equ #04
 WIN_BTN_DISABLED         equ #08
 
+; WinWindow (16 bytes).
+WIN_WINDOW_SIZE          equ 16
+WIN_WND_X                equ 0
+WIN_WND_Y                equ 2
+WIN_WND_WIDTH            equ 4
+WIN_WND_HEIGHT           equ 6
+WIN_WND_COLOR            equ 8
+WIN_WND_FLAGS            equ 9
+WIN_WND_COUNT            equ 10
+WIN_WND_FOCUS            equ 11
+WIN_WND_ITEMS            equ 12
+WIN_WND_LAST_FOCUS       equ 14
+WIN_WND_RESERVED         equ 15
+WIN_WND_NOPANEL          equ #01
+WIN_WND_SUNKEN           equ #02
+
+; WinItem (8 bytes).
+WIN_ITEM_SIZE            equ 8
+WIN_ITEM_TYPE            equ 0
+WIN_ITEM_FLAGS           equ 1
+WIN_ITEM_ID              equ 2
+WIN_ITEM_RESERVED        equ 3
+WIN_ITEM_CONTROL         equ 4
+WIN_ITEM_USER_DATA       equ 6
+
+WIN_T_NONE               equ 0
+WIN_T_LABEL              equ 1
+WIN_T_FILL               equ 2
+WIN_T_FRAME              equ 3
+WIN_T_PANEL              equ 4
+WIN_T_SEPARATOR          equ 5
+WIN_T_BUTTON             equ 6
+WIN_T_ICON               equ 7
+WIN_T_PROGRESS           equ 8
+WIN_T_SCROLLBAR          equ 9
+WIN_T_LISTBOX            equ 10
+WIN_T_EDIT               equ 11
+WIN_T_ZONE               equ 12
+
+WIN_IT_DIRTY             equ #01
+WIN_IT_HIDDEN            equ #02
+WIN_IT_DISABLED          equ #04
+WIN_IT_HIT               equ #08
+WIN_IT_FOCUSABLE         equ #10
+WIN_IT_PRESS             equ #20
+WIN_IT_REPEAT            equ #40
+WIN_IT_HOVER             equ #80
+
+WIN_BACKSTORE_MAX_PAGES  equ 4
+WIN_BACKSTORE_MAX_DEPTH  equ 4
+WIN_BACKSTORE_CHUNK      equ 256
+
 WIN_STYLE_PALETTE        equ #01
 WIN_STYLE_CLEAR          equ #02
 WIN_STYLE_BOTH           equ #04

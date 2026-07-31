@@ -23,7 +23,7 @@ def equates() -> dict[str, int]:
 
 
 class AbiTests(unittest.TestCase):
-    def test_stage1_entries_and_frozen_table(self) -> None:
+    def test_stage2_entries_and_frozen_table(self) -> None:
         values = equates()
         self.assertEqual(0, values["WIN_INIT"])
         self.assertEqual(5, values["WIN_GET_CONFIG"])
@@ -52,7 +52,16 @@ class AbiTests(unittest.TestCase):
             "win_button",
         ]
         self.assertEqual(expected_stage1, [label for label, _ in dispatch[6:19]])
-        self.assertTrue(all(label == "win_reserved" for label, _ in dispatch[19:]))
+        expected_stage2 = [
+            "win_draw",
+            "win_draw_item",
+            "win_update",
+            "win_set_backstore",
+            "win_open",
+            "win_close",
+        ]
+        self.assertEqual(expected_stage2, [label for label, _ in dispatch[19:25]])
+        self.assertTrue(all(label == "win_reserved" for label, _ in dispatch[25:]))
 
     def test_error_and_config_layout(self) -> None:
         values = equates()
@@ -93,6 +102,43 @@ class AbiTests(unittest.TestCase):
         self.assertEqual(0x01, values["WIN_STYLE_PALETTE"])
         self.assertEqual(0x02, values["WIN_STYLE_CLEAR"])
         self.assertEqual(0x04, values["WIN_STYLE_BOTH"])
+
+    def test_stage2_structure_layout_types_flags_and_limits(self) -> None:
+        values = equates()
+        self.assertEqual(16, values["WIN_WINDOW_SIZE"])
+        self.assertEqual(0, values["WIN_WND_X"])
+        self.assertEqual(8, values["WIN_WND_COLOR"])
+        self.assertEqual(10, values["WIN_WND_COUNT"])
+        self.assertEqual(12, values["WIN_WND_ITEMS"])
+        self.assertEqual(14, values["WIN_WND_LAST_FOCUS"])
+        self.assertEqual(15, values["WIN_WND_RESERVED"])
+        self.assertEqual(0x01, values["WIN_WND_NOPANEL"])
+        self.assertEqual(0x02, values["WIN_WND_SUNKEN"])
+
+        self.assertEqual(8, values["WIN_ITEM_SIZE"])
+        self.assertEqual(0, values["WIN_ITEM_TYPE"])
+        self.assertEqual(1, values["WIN_ITEM_FLAGS"])
+        self.assertEqual(4, values["WIN_ITEM_CONTROL"])
+        self.assertEqual(6, values["WIN_ITEM_USER_DATA"])
+        self.assertEqual(list(range(13)), [
+            values[name] for name in (
+                "WIN_T_NONE", "WIN_T_LABEL", "WIN_T_FILL", "WIN_T_FRAME",
+                "WIN_T_PANEL", "WIN_T_SEPARATOR", "WIN_T_BUTTON", "WIN_T_ICON",
+                "WIN_T_PROGRESS", "WIN_T_SCROLLBAR", "WIN_T_LISTBOX",
+                "WIN_T_EDIT", "WIN_T_ZONE",
+            )
+        ])
+        self.assertEqual(
+            [1 << bit for bit in range(8)],
+            [values[name] for name in (
+                "WIN_IT_DIRTY", "WIN_IT_HIDDEN", "WIN_IT_DISABLED",
+                "WIN_IT_HIT", "WIN_IT_FOCUSABLE", "WIN_IT_PRESS",
+                "WIN_IT_REPEAT", "WIN_IT_HOVER",
+            )],
+        )
+        self.assertEqual(4, values["WIN_BACKSTORE_MAX_PAGES"])
+        self.assertEqual(4, values["WIN_BACKSTORE_MAX_DEPTH"])
+        self.assertEqual(256, values["WIN_BACKSTORE_CHUNK"])
 
     def test_window_detection_masks_address(self) -> None:
         source = (ROOT / "win320.asm").read_text()
@@ -136,7 +182,7 @@ class AbiTests(unittest.TestCase):
         self.assertIn("textcore_palette_base:", core)
         self.assertIn("or (hl)", core)
 
-    def test_stage1_capabilities_do_not_claim_core(self) -> None:
+    def test_stage2_keeps_implementation_version_and_does_not_claim_core(self) -> None:
         source = (ROOT / "win320.asm").read_text()
         self.assertIn(
             "dw #0001                    ; implementation 0.1",

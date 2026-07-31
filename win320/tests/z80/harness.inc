@@ -1,11 +1,11 @@
         ifndef WIN320_TEST_HARNESS
 WIN320_TEST_HARNESS equ 1
 
-TEST_RESULT equ #e000
-TEST_DONE   equ #e001
-TEST_FIRST  equ #e002
-TEST_FAILS  equ #e003
-TEST_LAST   equ #e004
+TEST_RESULT equ #f800
+TEST_DONE   equ #f801
+TEST_FIRST  equ #f802
+TEST_FAILS  equ #f803
+TEST_LAST   equ #f804
 DONE_MAGIC  equ #a5
 
 t_saved_a: db 0
@@ -52,7 +52,7 @@ t_fail:
         ld a,(TEST_FAILS)
         ld e,a
         ld d,0
-        ld hl,#e010
+        ld hl,#f810
         add hl,de
         ld a,(TEST_LAST)
         ld (hl),a

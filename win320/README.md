@@ -1,10 +1,13 @@
 # WIN320.DLL
 
-Stage 1 of the lightweight 320×256 GUI library described in
+Stage 2 of the lightweight 320×256 GUI library described in
 [`specs.md`](specs.md). The current release keeps public ABI 1.0 and implements
-entry 0–18: lifecycle and work-window configuration, embedded/external WF32
-fonts, themes and EGA palette setup, accelerated GUI primitives, labels, and
-buttons. Entry 19–36 remain reserved and return `WIN_ERR_UNSUPPORTED`.
+entry 0–24: lifecycle and work-window configuration, embedded/external WF32
+fonts, themes and EGA palette setup, accelerated GUI primitives, labels,
+buttons, declarative windows, dirty updates, and LIFO modal backstore.
+Entry 25–36 remain reserved and return `WIN_ERR_UNSUPPORTED`.
+Keyboard focus remains deferred: `focus` and `last_focus` must be `#FF`,
+`WIN_IT_FOCUSABLE` is rejected, and `WIN_CAP_CORE` is still clear.
 
 The recommended layout is to load the DLL into WIN3 and keep application code,
 stack, and descriptors in WIN0–WIN2. The library does not select DSS mode
@@ -26,10 +29,9 @@ make release
 ```
 
 `release` updates the tracked `WIN320.DLL` and visual `WIN320.EXE`.
-`WIN320.EXE` enters mode `#81` and draws Stage-1 panels, frames, separators,
-labels, XOR/focus rectangles, and all button states on both screens. Screen 0
-uses ASCIIZ strings and the default theme; screen 1 uses Pascal strings and an
-alternate theme.
+`WIN320.EXE` enters mode `#81` and walks through the primitive screens plus
+Stage-2 declarative drawing, dirty updates, and nested modal restoration on
+both buffers.
 
 Build prerequisites are `sjasmplus`, Python 3, `z88dk-ticks`, and the sibling
 `sources/libman` checkout. Override `LIBMAN_MKDLL`, `LIBMAN_DIR`, or `TICKS`

@@ -1,6 +1,6 @@
         org #8100-512
 
-; WIN320 Stage-1 visual test. WIN320.DLL must be beside this EXE.
+; WIN320 Stage-2 visual test. WIN320.DLL must be beside this EXE.
         dw #5845
         db #45,#00
         dw #0200,#0000,#0000,#0000,#0000,#0000
@@ -19,10 +19,14 @@ DSS_SELPAGE             equ #54
 DSS_WAITKEY             equ #30
 DSS_EXIT                equ #41
 DSS_PUTS                equ #5c
+DSS_GETMEM              equ #3d
+DSS_FREEMEM             equ #3e
+BIOS_GETMEMBLKPAGES     equ #c5
 
 start:
         xor a
         ld (dll_loaded),a
+        ld (backstore_allocated),a
         ld (api_status),a
         ld (test_stage),a
         ld hl,msg_banner
@@ -79,6 +83,9 @@ start:
         or a
         jp nz,api_failed
 
+        call allocate_backstore
+        jp nz,api_failed
+
         xor a
         call select_target_screen
         jp nz,api_failed
@@ -130,19 +137,10 @@ start:
         call draw_pascal_scene
         jp nz,api_failed
 
-        ; Page 0: any key opens page 1. Page 1 remains visible until Escape,
-        ; so an auto-repeated Tab cannot immediately dismiss the test.
-        xor a
-        call show_screen
-        ld c,DSS_WAITKEY
-        rst #10
-        ld a,1
-        call show_screen
-.wait_escape:
-        ld c,DSS_WAITKEY
-        rst #10
-        cp 27
-        jr nz,.wait_escape
+        ld a,4
+        ld (test_stage),a
+        call draw_stage2_sequence
+        jp nz,api_failed
 
 success:
         call free_library
@@ -175,6 +173,97 @@ call_api:
         ld a,#ff
 .status:
         or a
+        ret
+
+allocate_backstore:
+        ld b,WIN_BACKSTORE_MAX_PAGES
+        ld c,DSS_GETMEM
+        rst #10
+        jr c,.memory
+        ld (backstore_block),a
+        push af
+        ld a,1
+        ld (backstore_allocated),a
+        pop af
+        ld b,WIN_BACKSTORE_MAX_PAGES
+        ld hl,backstore_physical_pages
+        ld c,BIOS_GETMEMBLKPAGES
+        rst #08
+        jr c,.memory
+        ld de,backstore_physical_pages
+        ld ix,WIN_BACKSTORE_MAX_PAGES
+        ld b,WIN_SET_BACKSTORE
+        jp call_api
+.memory:
+        ld a,WIN_ERR_MEMORY
+        or a
+        ret
+
+draw_stage2_sequence:
+        ld e,WIN_TXT_ASCIIZ
+        ld b,WIN_SET_TEXT_FORMAT
+        call call_api
+        ret nz
+        xor a
+        call select_target_screen
+        ret nz
+        ld de,demo_window
+        ld b,WIN_DRAW
+        call call_api
+        ret nz
+        xor a
+        call show_screen
+        call wait_step
+
+        ; Change two descriptors, mark only their entries dirty, and update.
+        ld hl,str_dirty_done
+        ld (demo_label+WIN_LBL_TEXT),hl
+        ld a,14
+        ld (demo_fill+WIN_RC_COLOR),a
+        ld a,WIN_IT_DIRTY
+        ld (demo_items+0*WIN_ITEM_SIZE+WIN_ITEM_FLAGS),a
+        ld (demo_items+2*WIN_ITEM_SIZE+WIN_ITEM_FLAGS),a
+        ld de,demo_window
+        ld b,WIN_UPDATE
+        call call_api
+        ret nz
+        call wait_step
+
+        ; Modal A saves screen 0. Modal B is nested on screen 1.
+        ld de,modal_a_window
+        ld b,WIN_OPEN
+        call call_api
+        ret nz
+        call wait_step
+        ld a,1
+        call select_target_screen
+        ret nz
+        ld de,modal_b_window
+        ld b,WIN_OPEN
+        call call_api
+        ret nz
+        ld a,1
+        call show_screen
+        call wait_step
+
+        ld b,WIN_CLOSE
+        call call_api
+        ret nz
+        call wait_step
+        ; The global target remains screen 1, but the next LIFO close restores
+        ; the saved screen-0 rectangle from its stack record.
+        ld b,WIN_CLOSE
+        call call_api
+        ret nz
+        xor a
+        call show_screen
+        call wait_step
+        xor a
+        ret
+
+wait_step:
+        ld c,DSS_WAITKEY
+        rst #10
         ret
 
 draw_default_scene:
@@ -340,11 +429,21 @@ load_failed:
 free_library:
         ld a,(dll_loaded)
         or a
-        ret z
+        jr z,free_backstore
         xor a
         ld (dll_loaded),a
         ld hl,(dll_handle)
         call LIBMAN.l_free
+
+free_backstore:
+        ld a,(backstore_allocated)
+        or a
+        ret z
+        xor a
+        ld (backstore_allocated),a
+        ld a,(backstore_block)
+        ld c,DSS_FREEMEM
+        rst #10
         ret
 
 restore_video:
@@ -476,11 +575,79 @@ pbutton_disabled:
         db #ff,WIN_BTN_DISABLED
         dw pstr_disabled
 
+; ---- Stage-2 declarative and modal descriptors ----------------------------
+
+demo_window:
+        dw 20,24,280,204
+        db #ff,0,5,#ff
+        dw demo_items
+        db #ff,0
+demo_items:
+        db WIN_T_LABEL,WIN_IT_DIRTY,#ff,0
+        dw demo_label,0
+        db WIN_T_SEPARATOR,WIN_IT_DIRTY,#ff,0
+        dw demo_separator,0
+        db WIN_T_FILL,WIN_IT_DIRTY,#ff,0
+        dw demo_fill,0
+        db WIN_T_BUTTON,WIN_IT_DIRTY|WIN_IT_DISABLED,#ff,0
+        dw demo_button,0
+        db WIN_T_ZONE,WIN_IT_DIRTY|WIN_IT_HIT,7,0
+        dw demo_zone,0
+demo_label:
+        dw 8,10,264,8
+        db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL
+        dw str_declarative
+demo_separator:
+        dw 8,28,264,2
+        db 0,0
+demo_fill:
+        dw 20,48,240,68
+        db 11,0
+demo_button:
+        dw 80,148,120,20
+        db #ff,0
+        dw str_item_disabled
+demo_zone:
+        dw 20,48,240,68
+        db 0,0
+
+modal_a_window:
+        dw 54,62,212,116
+        db #ff,0,2,#ff
+        dw modal_a_items
+        db #ff,0
+modal_a_items:
+        db WIN_T_LABEL,WIN_IT_DIRTY,#ff,0
+        dw modal_a_label,0
+        db WIN_T_BUTTON,WIN_IT_DIRTY,#ff,0
+        dw modal_a_button,0
+modal_a_label:
+        dw 10,18,192,8
+        db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL
+        dw str_modal_a
+modal_a_button:
+        dw 56,64,100,20
+        db #ff,0
+        dw str_nested_next
+
+modal_b_window:
+        dw 80,88,160,80
+        db #ff,WIN_WND_SUNKEN,1,#ff
+        dw modal_b_items
+        db #ff,0
+modal_b_items:
+        db WIN_T_LABEL,WIN_IT_DIRTY,#ff,0
+        dw modal_b_label,0
+modal_b_label:
+        dw 8,32,144,8
+        db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL
+        dw str_modal_b
+
 blue_theme:
         db 15,1,9,3,15,8,0,15
         db 3,15,1,11,1,9,#55,0
 
-str_title:       db "WIN320 Stage 1 / screen 0 / ASCIIZ",0
+str_title:       db "WIN320 Stage 2 / screen 0 / ASCIIZ",0
 str_long:        db "Clipped proportional label with a deliberately long tail",0
 str_font_ok:     db "Embedded WF32 survived failed win_load_font",0
 str_normal:      db "Normal",0
@@ -488,8 +655,14 @@ str_focus:       db "Focus",0
 str_pressed:     db "Pressed",0
 str_disabled:    db "Disabled",0
 str_page0_hint:  db "Any key: alternate screen",0
+str_declarative: db "Stage 2: declarative draw (key = dirty update)",0
+str_dirty_done:  db "Dirty update: only label and fill changed",0
+str_item_disabled: db "Item-disabled",0
+str_modal_a:     db "Modal A saved on screen 0",0
+str_nested_next: db "Next: screen 1",0
+str_modal_b:     db "Nested modal B / screen 1",0
 
-pstr_title:      db 39,"WIN320 Stage 1 / screen 1 / Pascal text"
+pstr_title:      db 39,"WIN320 Stage 2 / screen 1 / Pascal text"
 pstr_long:       db 55,"Alternate theme, centered and clipped Pascal label tail"
 pstr_hint:       db 17,"Escape: exit test"
 pstr_normal:     db 6,"Normal"
@@ -499,8 +672,8 @@ pstr_disabled:   db 8,"Disabled"
 
 missing_font:    db "__WIN320_MISSING__.FNT",0
 dll_name:        db "WIN320.DLL",0
-msg_banner:      db "WIN320 Stage 1 visual test",13,10,0
-msg_ok:          db "PASS: inspect both GUI screens.",13,10,0
+msg_banner:      db "WIN320 Stage 2 visual test",13,10,0
+msg_ok:          db "PASS: declarative, dirty and modal sequence.",13,10,0
 msg_failed:      db "FAIL: stage=$",0
 msg_status:      db " status=$",0
 msg_load_failed: db "FAIL: load reason=$",0
@@ -514,5 +687,9 @@ api_status:      db 0
 test_stage:      db 0
 old_mode:        db 0
 old_screen:      db 0
+backstore_block: db 0
+backstore_allocated: db 0
+backstore_physical_pages:
+        ds WIN_BACKSTORE_MAX_PAGES,0
 
         include "libman.asm"
