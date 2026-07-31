@@ -337,7 +337,7 @@ start:
         call t_expect_z
         push ix
         pop hl
-        ld de,WIN_CAP_PASCAL_STR
+        ld de,WIN_CAP_CORE|WIN_CAP_PASCAL_STR
         or a
         sbc hl,de
         ld a,5

@@ -23,7 +23,7 @@ def equates() -> dict[str, int]:
 
 
 class AbiTests(unittest.TestCase):
-    def test_stage2_entries_and_frozen_table(self) -> None:
+    def test_stage3_entries_and_frozen_table(self) -> None:
         values = equates()
         self.assertEqual(0, values["WIN_INIT"])
         self.assertEqual(5, values["WIN_GET_CONFIG"])
@@ -61,7 +61,11 @@ class AbiTests(unittest.TestCase):
             "win_close",
         ]
         self.assertEqual(expected_stage2, [label for label, _ in dispatch[19:25]])
-        self.assertTrue(all(label == "win_reserved" for label, _ in dispatch[25:]))
+        self.assertEqual(
+            ["win_poll", "win_track", "win_wait_release", "win_set_cursor"],
+            [label for label, _ in dispatch[25:29]],
+        )
+        self.assertTrue(all(label == "win_reserved" for label, _ in dispatch[29:]))
 
     def test_error_and_config_layout(self) -> None:
         values = equates()
@@ -182,7 +186,7 @@ class AbiTests(unittest.TestCase):
         self.assertIn("textcore_palette_base:", core)
         self.assertIn("or (hl)", core)
 
-    def test_stage2_keeps_implementation_version_and_does_not_claim_core(self) -> None:
+    def test_stage3_keeps_implementation_version_and_claims_core(self) -> None:
         source = (ROOT / "win320.asm").read_text()
         self.assertIn(
             "dw #0001                    ; implementation 0.1",
@@ -191,8 +195,25 @@ class AbiTests(unittest.TestCase):
         version = source.split("win_get_version:", 1)[1].split(
             "win_get_config:", 1
         )[0]
-        self.assertIn("ld ix,WIN_CAP_PASCAL_STR", version)
-        self.assertNotIn("WIN_CAP_CORE", version)
+        self.assertIn("ld ix,WIN_CAP_CORE|WIN_CAP_PASCAL_STR", version)
+
+    def test_stage3_event_abi_layout_and_constants(self) -> None:
+        values = equates()
+        self.assertEqual(4, values["WIN_KEY_SIZE"])
+        self.assertEqual(32, values["WIN_TRACK_SIZE"])
+        self.assertEqual(24, values["WIN_TRK_STATE"])
+        self.assertEqual(4, values["WIN_CURSOR_SIZE"])
+        self.assertEqual(12, values["WIN_REPEAT_DELAY"])
+        self.assertEqual(3, values["WIN_REPEAT_RATE"])
+        self.assertEqual(
+            list(range(10)),
+            [values[name] for name in (
+                "WIN_EV_NONE", "WIN_EV_LCLICK", "WIN_EV_RCLICK",
+                "WIN_EV_REPEAT", "WIN_EV_HOTKEY", "WIN_EV_KEY",
+                "WIN_EV_HOVER", "WIN_EV_LEAVE", "WIN_EV_OUTSIDE",
+                "WIN_EV_FOCUS",
+            )],
+        )
 
 
 if __name__ == "__main__":

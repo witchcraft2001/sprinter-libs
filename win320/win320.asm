@@ -40,10 +40,10 @@
         jp win_set_backstore        ; 22
         jp win_open                 ; 23
         jp win_close                ; 24
-        jp win_reserved             ; 25
-        jp win_reserved             ; 26
-        jp win_reserved             ; 27
-        jp win_reserved             ; 28
+        jp win_poll                 ; 25
+        jp win_track                ; 26
+        jp win_wait_release         ; 27
+        jp win_set_cursor           ; 28
         jp win_reserved             ; 29
         jp win_reserved             ; 30
         jp win_reserved             ; 31
@@ -284,7 +284,7 @@ win_set_screen:
 win_get_version:
         ld d,1
         ld e,0
-        ld ix,WIN_CAP_PASCAL_STR
+        ld ix,WIN_CAP_CORE|WIN_CAP_PASCAL_STR
         xor a
         scf
         ccf
@@ -326,6 +326,7 @@ win_get_config:
 
         include "stage1.inc"
         include "stage2.inc"
+        include "stage3.inc"
 
 win_reserved:
         ld a,WIN_ERR_UNSUPPORTED
@@ -766,6 +767,32 @@ win_bios_call:
         jp win_test_bios_call
         else
         rst #08
+        ret
+        endif
+
+; Stage-3 firmware calls are deliberately separate from drawing mappings.
+; The test build routes them through the existing harness hooks.
+win_mouse_call:
+        ifdef WIN320_TEST_BUILD
+        jp win_test_bios_call
+        else
+        rst #30
+        ret
+        endif
+
+win_scankey_call:
+        ifdef WIN320_TEST_BUILD
+        jp win_test_dss_call
+        else
+        rst #10
+        ret
+        endif
+
+win_halt_call:
+        ifdef WIN320_TEST_BUILD
+        ret
+        else
+        halt
         ret
         endif
 

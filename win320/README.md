@@ -1,13 +1,11 @@
 # WIN320.DLL
 
-Stage 2 of the lightweight 320×256 GUI library described in
-[`specs.md`](specs.md). The current release keeps public ABI 1.0 and implements
-entry 0–24: lifecycle and work-window configuration, embedded/external WF32
-fonts, themes and EGA palette setup, accelerated GUI primitives, labels,
-buttons, declarative windows, dirty updates, and LIFO modal backstore.
-Entry 25–36 remain reserved and return `WIN_ERR_UNSUPPORTED`.
-Keyboard focus remains deferred: `focus` and `last_focus` must be `#FF`,
-`WIN_IT_FOCUSABLE` is rejected, and `WIN_CAP_CORE` is still clear.
+Stage 3 of the lightweight 320×256 GUI library described in
+[`specs.md`](specs.md). The release keeps public ABI 1.0 and implements entries
+0–28: lifecycle, fonts, accelerated primitives, declarative windows, dirty
+updates, modal backstore, and `win_poll`, `win_track`, `win_wait_release`, and
+`win_set_cursor`. `WIN_CAP_CORE` is set. Entries 29–36 remain reserved and
+return `WIN_ERR_UNSUPPORTED`; keyboard focus and `WIN_TRK_TAB_FOCUS` are Stage 4.
 
 The recommended layout is to load the DLL into WIN3 and keep application code,
 stack, and descriptors in WIN0–WIN2. The library does not select DSS mode
@@ -16,6 +14,11 @@ stack, and descriptors in WIN0–WIN2. The library does not select DSS mode
 
 The default font is already stored as the first trailing payload of
 `WIN320.DLL`. No separate font file is required.
+
+Before the first `win_poll` or `win_track`, the application must initialize
+the BIOS mouse driver itself (`RST #30`, `C=0`). The library never does mouse
+INIT. With `WIN_TRK_SHOW_CUR`, `win_track` owns cursor visibility for its
+blocking loop; a `win_poll` client shows and hides it around its own loop.
 
 ## Build and verify
 

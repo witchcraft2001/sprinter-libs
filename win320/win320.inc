@@ -160,6 +160,63 @@ WIN_IT_PRESS             equ #20
 WIN_IT_REPEAT            equ #40
 WIN_IT_HOVER             equ #80
 
+; WinKey (4 bytes).
+WIN_KEY_SIZE             equ 4
+WIN_KEY_ASCII            equ 0
+WIN_KEY_SCAN             equ 1
+WIN_KEY_MODS             equ 2
+WIN_KEY_ID               equ 3
+
+; WinTrack (32 bytes).
+WIN_TRACK_SIZE           equ 32
+WIN_TRK_WINDOW           equ 0
+WIN_TRK_KEYS             equ 2
+WIN_TRK_KEY_COUNT        equ 4
+WIN_TRK_OPTIONS          equ 5
+WIN_TRK_EVENT            equ 6
+WIN_TRK_ID               equ 7
+WIN_TRK_INDEX            equ 8
+WIN_TRK_PART             equ 9
+WIN_TRK_MOUSE_X          equ 10
+WIN_TRK_MOUSE_Y          equ 12
+WIN_TRK_BUTTONS          equ 13
+WIN_TRK_KEY_ASCII        equ 14
+WIN_TRK_KEY_SCAN         equ 15
+WIN_TRK_KEY_MODS         equ 16
+WIN_TRK_RESERVED         equ 17
+WIN_TRK_ITEM             equ 18
+WIN_TRK_USER_DATA        equ 20
+WIN_TRK_REPEAT_DELAY     equ 22
+WIN_TRK_REPEAT_RATE      equ 23
+WIN_TRK_STATE            equ 24
+
+; WinCursor (4-byte header followed by BIOS-format pixels).
+WIN_CURSOR_SIZE          equ 4
+WIN_CUR_WIDTH            equ 0
+WIN_CUR_HEIGHT           equ 1
+WIN_CUR_HOT_X            equ 2
+WIN_CUR_HOT_Y            equ 3
+
+WIN_TRK_ANY_KEY          equ #01
+WIN_TRK_OUTSIDE          equ #02
+WIN_TRK_HALT             equ #04
+WIN_TRK_SHOW_CUR         equ #08
+WIN_TRK_TAB_FOCUS        equ #10
+
+WIN_EV_NONE              equ 0
+WIN_EV_LCLICK            equ 1
+WIN_EV_RCLICK            equ 2
+WIN_EV_REPEAT            equ 3
+WIN_EV_HOTKEY            equ 4
+WIN_EV_KEY               equ 5
+WIN_EV_HOVER             equ 6
+WIN_EV_LEAVE             equ 7
+WIN_EV_OUTSIDE           equ 8
+WIN_EV_FOCUS             equ 9
+
+WIN_REPEAT_DELAY         equ 12
+WIN_REPEAT_RATE          equ 3
+
 WIN_BACKSTORE_MAX_PAGES  equ 4
 WIN_BACKSTORE_MAX_DEPTH  equ 4
 WIN_BACKSTORE_CHUNK      equ 256

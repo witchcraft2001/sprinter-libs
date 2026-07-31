@@ -1,6 +1,6 @@
         org #8100-512
 
-; WIN320 Stage-2 visual test. WIN320.DLL must be beside this EXE.
+; WIN320 Stage-3 visual test. WIN320.DLL must be beside this EXE.
         dw #5845
         db #45,#00
         dw #0200,#0000,#0000,#0000,#0000,#0000
@@ -66,7 +66,7 @@ start:
         jp nz,self_failed
         push ix
         pop hl
-        ld de,WIN_CAP_PASCAL_STR
+        ld de,WIN_CAP_CORE|WIN_CAP_PASCAL_STR
         or a
         sbc hl,de
         jp nz,self_failed
@@ -140,6 +140,13 @@ start:
         ld a,4
         ld (test_stage),a
         call draw_stage2_sequence
+        jp nz,api_failed
+
+        ; Stage 3 is intentionally interactive: application code owns mouse
+        ; INIT, then demonstrates one non-blocking poll and a blocking tracker.
+        ld a,5
+        ld (test_stage),a
+        call run_stage3_dialog
         jp nz,api_failed
 
 success:
@@ -257,6 +264,58 @@ draw_stage2_sequence:
         ret nz
         xor a
         call show_screen
+        call wait_step
+        xor a
+        ret
+
+run_stage3_dialog:
+        xor a
+        call select_target_screen
+        ret nz
+        ld hl,str_stage3_hint
+        ld (demo_label+WIN_LBL_TEXT),hl
+        ; This zone deliberately has no HOVER flag: the test must wait for a
+        ; visible mouse action rather than returning immediately on entry.
+        ld a,WIN_IT_DIRTY|WIN_IT_HIT
+        ld (demo_items+4*WIN_ITEM_SIZE+WIN_ITEM_FLAGS),a
+        ld de,demo_window
+        ld b,WIN_DRAW
+        call call_api
+        ret nz
+        xor a
+        ld (stage3_track+WIN_TRK_STATE),a
+        ld (stage3_track+WIN_TRK_STATE+1),a
+        ld (stage3_track+WIN_TRK_STATE+2),a
+        ld (stage3_track+WIN_TRK_STATE+3),a
+        ld (stage3_track+WIN_TRK_STATE+4),a
+        ld (stage3_track+WIN_TRK_STATE+5),a
+        ld (stage3_track+WIN_TRK_STATE+6),a
+        ld (stage3_track+WIN_TRK_STATE+7),a
+        ld c,0                       ; mandatory application-side Mouse INIT
+        rst #30
+        ld c,1                       ; poll must leave this visible cursor up
+        rst #30
+        ld b,WIN_WAIT_RELEASE
+        call call_api
+        ret nz
+        ld de,stage3_track
+        ld b,WIN_POLL
+        call call_api
+        ret nz
+        ld de,stage3_track
+        ld b,WIN_TRACK
+        call call_api
+        ret nz
+        ld c,2
+        rst #30
+        ld hl,str_stage3_done
+        ld (demo_label+WIN_LBL_TEXT),hl
+        ld a,WIN_IT_DIRTY
+        ld (demo_items+0*WIN_ITEM_SIZE+WIN_ITEM_FLAGS),a
+        ld de,demo_window
+        ld b,WIN_UPDATE
+        call call_api
+        ret nz
         call wait_step
         xor a
         ret
@@ -611,6 +670,11 @@ demo_zone:
         dw 20,48,240,68
         db 0,0
 
+stage3_track:
+        dw demo_window,0
+        db 0,WIN_TRK_OUTSIDE|WIN_TRK_HALT
+        ds WIN_TRACK_SIZE-6,0
+
 modal_a_window:
         dw 54,62,212,116
         db #ff,0,2,#ff
@@ -647,7 +711,7 @@ blue_theme:
         db 15,1,9,3,15,8,0,15
         db 3,15,1,11,1,9,#55,0
 
-str_title:       db "WIN320 Stage 2 / screen 0 / ASCIIZ",0
+str_title:       db "WIN320 Stage 3 / screen 0 / ASCIIZ",0
 str_long:        db "Clipped proportional label with a deliberately long tail",0
 str_font_ok:     db "Embedded WF32 survived failed win_load_font",0
 str_normal:      db "Normal",0
@@ -655,14 +719,16 @@ str_focus:       db "Focus",0
 str_pressed:     db "Pressed",0
 str_disabled:    db "Disabled",0
 str_page0_hint:  db "Any key: alternate screen",0
-str_declarative: db "Stage 2: declarative draw (key = dirty update)",0
+str_declarative: db "Stage 3: declarative draw (key = dirty update)",0
+str_stage3_hint: db "Stage 3: click blue zone, right-click, or click outside",0
+str_stage3_done: db "Stage 3 event received; press a key to finish",0
 str_dirty_done:  db "Dirty update: only label and fill changed",0
 str_item_disabled: db "Item-disabled",0
 str_modal_a:     db "Modal A saved on screen 0",0
 str_nested_next: db "Next: screen 1",0
 str_modal_b:     db "Nested modal B / screen 1",0
 
-pstr_title:      db 39,"WIN320 Stage 2 / screen 1 / Pascal text"
+pstr_title:      db 39,"WIN320 Stage 3 / screen 1 / Pascal text"
 pstr_long:       db 55,"Alternate theme, centered and clipped Pascal label tail"
 pstr_hint:       db 17,"Escape: exit test"
 pstr_normal:     db 6,"Normal"
@@ -672,7 +738,7 @@ pstr_disabled:   db 8,"Disabled"
 
 missing_font:    db "__WIN320_MISSING__.FNT",0
 dll_name:        db "WIN320.DLL",0
-msg_banner:      db "WIN320 Stage 2 visual test",13,10,0
+msg_banner:      db "WIN320 Stage 3 visual test",13,10,0
 msg_ok:          db "PASS: declarative, dirty and modal sequence.",13,10,0
 msg_failed:      db "FAIL: stage=$",0
 msg_status:      db " status=$",0
