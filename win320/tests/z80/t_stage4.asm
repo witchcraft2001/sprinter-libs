@@ -31,6 +31,7 @@ pascal_buffer:          db 3,"xyz",#b1,#b2,#b3,#b4,#b5
 edit_nav_buffer:        db "abcd",0,#c1,#c2,#c3,#c4
 edit_full_buffer:       db "abc",0
 edit_scroll_buffer:     db "abcdefgh",0
+edit_words_buffer:      db "one, two.three\four",0
 
 edit_a:
         dw 8,24,72,12
@@ -56,6 +57,10 @@ edit_scroll:
         dw 8,104,10,12
         db #ff,WIN_ED_FRAME,8,0,8,0
         dw edit_scroll_buffer
+edit_words:
+        dw 8,120,112,12
+        db #ff,WIN_ED_FRAME,24,0,0,0
+        dw edit_words_buffer
 
 focus_button:
         dw 8,8,64,14
@@ -309,6 +314,7 @@ start:
         call test_edit_draw
         call test_focus
         call test_edit_keys
+        call test_word_navigation
         call test_modal_cursor_pair
         call test_caret_blink
         call test_mouse_cursor
@@ -377,6 +383,8 @@ test_edit_draw:
         ret
 
 test_focus:
+        xor a
+        ld (s4_test_full_edit_renders),a
         ld de,focus_window
         call win_draw
         or a
@@ -390,6 +398,10 @@ test_focus:
         and WIN_BTN_FOCUS
         ld a,32
         call t_expect_nz
+        ld a,(s4_test_full_edit_renders)
+        cp 1                         ; initial draw still includes edit frame
+        ld a,124
+        call t_expect_z
 
         ; A full draw must clear the derived flag of an old focus control even
         ; when that item has become hidden and therefore is not rendered.
@@ -442,6 +454,25 @@ test_focus:
         ld a,36
         call t_expect_nz
 
+        ; Programmatic edit-to-button focus changes use the same content-only
+        ; edit path as Tab/mouse and must not rebuild the complete field.
+        xor a
+        ld (s4_test_full_edit_renders),a
+        ld (focus_window+WIN_WND_FOCUS),a
+        ld de,focus_window
+        call win_update
+        or a
+        ld a,125
+        call t_expect_z
+        ld a,(s4_test_full_edit_renders)
+        or a
+        ld a,126
+        call t_expect_z
+        ld a,1
+        ld (focus_window+WIN_WND_FOCUS),a
+        ld de,focus_window
+        call win_update
+
         ld hl,keys_tab
         ld a,1
         call set_keys
@@ -477,6 +508,23 @@ test_focus:
         ld a,(focus_window+WIN_WND_FOCUS)
         cp 1
         ld a,42
+        call t_expect_z
+
+        ; Moving focus from edit to button repaints only the edit content.
+        xor a
+        ld (s4_test_full_edit_renders),a
+        ld hl,keys_shift_tab
+        ld a,1
+        call set_keys
+        ld de,focus_track
+        call win_poll
+        ld a,(focus_window+WIN_WND_FOCUS)
+        or a
+        ld a,118
+        call t_expect_z
+        ld a,(s4_test_full_edit_renders)
+        or a
+        ld a,119
         call t_expect_z
 
         xor a
@@ -717,6 +765,54 @@ test_edit_keys:
         call t_expect_z
         ld e,WIN_TXT_ASCIIZ
         call win_set_text_format
+        ret
+
+test_word_navigation:
+        ; Ctrl+Right skips a word and its separators; Ctrl+Left returns to
+        ; the previous word start. Exercise direct BIOS and WinTrack input.
+        xor a
+        ld (edit_words+WIN_ED_CURSOR),a
+        ld (edit_words+WIN_ED_SCROLL),a
+        ld hl,keys_word_navigation
+        ld a,4
+        call set_keys
+        ld de,edit_words
+        ld ix,0
+        call win_edit
+        or a
+        ld a,120
+        call t_expect_z
+        ld a,(edit_words+WIN_ED_CURSOR)
+        cp 5
+        ld a,121
+        call t_expect_z
+
+        xor a
+        ld (edit_words+WIN_ED_CURSOR),a
+        ld (edit_words+WIN_ED_SCROLL),a
+        ld hl,focus_track+WIN_TRK_STATE
+        ld b,8
+.clear_track_state:
+        ld (hl),a
+        inc hl
+        djnz .clear_track_state
+        ld hl,300
+        ld (mock_mouse_x),hl
+        ld a,200
+        ld (mock_mouse_y),a
+        ld hl,keys_word_navigation
+        ld a,4
+        call set_keys
+        ld de,edit_words
+        ld ix,focus_track
+        call win_edit
+        or a
+        ld a,122
+        call t_expect_z
+        ld a,(edit_words+WIN_ED_CURSOR)
+        cp 5
+        ld a,123
+        call t_expect_z
         ret
 
 test_modal_cursor_pair:
@@ -975,6 +1071,8 @@ keys_full:              db 'Z',#2c,0, #0d,#28,0
 keys_pascal_edit:       db #08,#0e,0, 'Q',#10,0, #0d,#28,0
 keys_one_char:          db 'X',#2d,0
 keys_blink_redraw:      db 0,S4_SCAN_LEFT,0, #0d,#28,0
+keys_word_navigation:   db 0,S4_SCAN_RIGHT,#20, 0,S4_SCAN_RIGHT,#20
+                        db 0,S4_SCAN_LEFT,#20, #0d,#28,0
 expect_insert:          db "abXc",0
 expect_navigation:      db "ac",0
 expect_full:            db "abc",0

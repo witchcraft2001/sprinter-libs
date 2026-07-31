@@ -295,8 +295,11 @@ s4_char_width_at:
         ret
 
 s4_render_loaded_edit:
+        ifdef WIN320_TEST_BUILD
+        ld hl,s4_test_full_edit_renders
+        inc (hl)
+        endif
         call s4_prepare_edit_render
-        or a
         ret nz
         call s1_map_pair
         ld a,(s4_edit_scratch+WIN_ED_FLAGS)
@@ -322,7 +325,6 @@ s4_render_loaded_edit:
 ; modal typing must not flash the bevel on every key, matching FN InputLine.
 s4_render_edit_content:
         call s4_prepare_edit_render
-        or a
         ret nz
         call s1_map_pair
         call s4_render_edit_content_mapped
@@ -344,6 +346,7 @@ s4_prepare_edit_render:
         jp s1_resolve_pair
 .font:
         ld a,WIN_ERR_FONT
+        or a
         ret
 
 s4_render_edit_content_mapped:
@@ -559,7 +562,6 @@ s4_validate_window_focus:
         jr nc,.bad
         call s2_load_item_index
         call s2_validate_item
-        or a
         ret nz
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_HIDDEN|WIN_IT_DISABLED|WIN_IT_FOCUSABLE
@@ -664,13 +666,22 @@ s4_publish_button_focus:
         ret
 
 s4_edit_draw_item:
+        call s4_prepare_edit_item
+        ret nz
+        ld a,(s2_item_rendered)
+        add a,a
+        jp c,s4_render_edit_content
+        jp s4_render_loaded_edit
+
+s4_prepare_edit_item:
         ld hl,(item_scratch+WIN_ITEM_CONTROL)
         ld (s4_edit_ptr),hl
         call s4_load_edit
         ret nz
         ld hl,s4_edit_scratch+WIN_ED_FLAGS
         call s4_apply_focus_scratch
-        jp s4_render_loaded_edit
+        xor a
+        ret
 
 s4_preflight_edit_item:
         call s2_set_window_origin
@@ -735,7 +746,6 @@ s4_keyboard_focus:
         and WIN_TRK_TAB_FOCUS
         ret z
         call s4_tab_focus
-        or a
         jr z,.consumed
         ld (s3_runtime_error),a
 .consumed:
@@ -839,7 +849,6 @@ s4_tab_focus:
 .move:
         ld a,b
         call s4_apply_focus
-        or a
         ret nz
         ld a,(s4_focus_candidate)
         ld (s3_event_index),a
@@ -883,11 +892,9 @@ s4_apply_focus:
         call s2_set_window_origin
         ld a,(s4_old_focus)
         call s4_redraw_focus_index
-        or a
         jr nz,.draw_failed
         ld a,(s4_focus_candidate)
         call s4_redraw_focus_index
-        or a
         jr nz,.draw_failed
         call s2_restore_origin
         ld a,(s4_focus_candidate)
@@ -901,7 +908,6 @@ s4_apply_focus:
         inc hl
         ld (hl),a
         call s4_cursor_show
-        or a
         ret nz
         xor a
         ret
@@ -929,11 +935,14 @@ s4_redraw_focus_index:
         cp WIN_T_BUTTON
         jr z,.visual
         cp WIN_T_EDIT
-        jr z,.visual
+        jr nz,.none
+        jr .visual
+.none:
         xor a
         ret
 .visual:
-        jp s2_process_item
+        ld a,#80                     ; focus-only dispatch marker
+        jp s2_process_item_marked
 
 s4_cursor_hide:
         xor a
@@ -983,7 +992,6 @@ s4_activate_focused_button:
         ld a,(s4_focus_candidate)
         ld b,1
         call s4_draw_button_state
-        or a
         jr nz,.error
         call win_halt_call
         call win_halt_call
@@ -991,7 +999,6 @@ s4_activate_focused_button:
         ld a,(s4_focus_candidate)
         ld b,0
         call s4_draw_button_state
-        or a
         jr nz,.error
         ld a,(s4_focus_candidate)
         ld (s3_event_index),a
@@ -1066,7 +1073,6 @@ s4_edit_run:
         ld hl,(s4_edit_ptr)
         ld (s4_active_edit_ptr),hl
         call s4_validate_edit_track
-        or a
         jp nz,.early
         call s4_load_edit
         jp nz,.early
@@ -1085,19 +1091,16 @@ s4_edit_run:
         or WIN_ED_FOCUS
         ld (s4_edit_scratch+WIN_ED_FLAGS),a
         call s4_render_modal_edit
-        or a
         jp nz,.late
         ld a,S4_CARET_TICKS
         ld (s4_caret_ticks),a
 .loop:
         call s4_edit_next_input
-        or a
         jp nz,.late
         ld a,(s4_input_kind)
         or a
         jr nz,.have_input
         call s4_tick_caret
-        or a
         jp nz,.late
         jr .loop
 .have_input:
@@ -1143,6 +1146,9 @@ s4_edit_run:
         jr nc,.loop
         jr .redraw
 .left:
+        ld a,(s4_key_mods)
+        bit 5,a
+        jr nz,.word_left
         ld hl,s4_edit_scratch+WIN_ED_CURSOR
         ld a,(hl)
         or a
@@ -1150,6 +1156,9 @@ s4_edit_run:
         dec (hl)
         jr .redraw
 .right:
+        ld a,(s4_key_mods)
+        bit 5,a
+        jr nz,.word_right
         ld a,(s4_edit_scratch+WIN_ED_CURSOR)
         ld b,a
         ld a,(s4_len)
@@ -1170,11 +1179,70 @@ s4_edit_run:
         ld (s4_edit_scratch+WIN_ED_LEN),a
         call s4_update_scroll
         call s4_render_modal_content
-        or a
         jp nz,.late
         ld a,S4_CARET_TICKS
         ld (s4_caret_ticks),a
         jp .loop
+.word_right:
+        ld a,(s4_edit_scratch+WIN_ED_CURSOR)
+        ld c,a
+        ld a,(s4_len)
+        sub c
+        jp z,.loop
+        ld b,a
+        ld e,c
+        ld d,0
+        ld hl,(s4_data_ptr)
+        add hl,de
+.word_right_chars:
+        ld a,(hl)
+        call s4_is_word_separator
+        jr z,.word_right_spaces
+        inc hl
+        inc c
+        djnz .word_right_chars
+        jr .word_store
+.word_right_spaces:
+        ld a,(hl)
+        call s4_is_word_separator
+        jr nz,.word_store
+        inc hl
+        inc c
+        djnz .word_right_spaces
+        jr .word_store
+.word_left:
+        ld a,(s4_edit_scratch+WIN_ED_CURSOR)
+        or a
+        jp z,.loop
+        ld c,a
+        ld b,a
+        ld e,a
+        ld d,0
+        ld hl,(s4_data_ptr)
+        add hl,de
+.word_left_spaces:
+        dec hl
+        ld a,(hl)
+        call s4_is_word_separator
+        jr nz,.word_left_chars
+        dec c
+        djnz .word_left_spaces
+        jr .word_store
+.word_left_chars:
+        dec c
+        djnz .word_left_more
+        jr .word_store
+.word_left_more:
+        dec hl
+        ld a,(hl)
+        call s4_is_word_separator
+        jr z,.word_store
+        dec c
+        djnz .word_left_more
+.word_store:
+        ld a,c
+        ld (s4_edit_scratch+WIN_ED_CURSOR),a
+        jp .redraw
 .escape:
         ld hl,s4_original_buffer
         ld de,(s4_buffer_ptr)
@@ -1223,7 +1291,6 @@ s4_edit_run:
         call s4_cursor_from_mouse_x
         call s4_update_scroll
         call s4_render_modal_content
-        or a
         jr nz,.late
         ld a,S4_CARET_TICKS
         ld (s4_caret_ticks),a
@@ -1237,7 +1304,6 @@ s4_edit_run:
         and #ff-WIN_ED_FOCUS
         ld (s4_edit_scratch+WIN_ED_FLAGS),a
         call s4_render_modal_content
-        or a
         jr nz,.late
         ld a,(s4_reason)
         ld e,a
@@ -1249,7 +1315,6 @@ s4_edit_run:
         and #ff-WIN_ED_FOCUS
         ld (s4_edit_scratch+WIN_ED_FLAGS),a
         call s4_render_modal_content         ; best-effort focus cleanup
-        or a
         call nz,s4_publish_edit              ; keep logical state consistent
         ld a,(s4_saved_error)
         ld e,0
@@ -1324,6 +1389,7 @@ s4_finish_cursor_write:
         or a
         ret nz
         ld a,b
+        or a
         ret
 
 s4_modal_pointer_hide:
@@ -1387,6 +1453,8 @@ s4_edit_next_input:
         ld (s4_key_ascii),a
         ld a,(s3_track_scratch+WIN_TRK_KEY_SCAN)
         ld (s4_key_scan),a
+        ld a,(s3_track_scratch+WIN_TRK_KEY_MODS)
+        ld (s4_key_mods),a
         ld a,(s3_track_scratch+WIN_TRK_EVENT)
         or a
         jr z,.maybe_key
@@ -1423,6 +1491,8 @@ s4_edit_next_input:
         ld (s4_key_ascii),a
         ld a,d
         ld (s4_key_scan),a
+        ld a,b
+        ld (s4_key_mods),a
 .key:
         ld a,1
         ld (s4_input_kind),a
@@ -1431,6 +1501,17 @@ s4_edit_next_input:
 .empty:
         call win_halt_call
         xor a
+        ret
+
+; FlexNavigator word boundaries: space, comma, period and backslash.
+s4_is_word_separator:
+        cp ' '
+        ret z
+        cp ','
+        ret z
+        cp '.'
+        ret z
+        cp '\'
         ret
 
 ; Insert s4_key_ascii at cursor. C=set if the buffer changed.
@@ -1539,50 +1620,54 @@ s4_store_public_length:
 
 ; ---- Stage-4 internal state ---------------------------------------------
 
-s4_edit_ptr:            dw 0
-s4_active_edit_ptr:     dw 0
-s4_track_ptr:           dw 0
-s4_control_ptr:         dw 0
-s4_buffer_ptr:          dw 0
-s4_data_ptr:            dw 0
-s4_insert_ptr:          dw 0
-s4_content_x:           dw 0
-s4_content_w:           dw 0
-s4_caret_x:             dw 0
-s4_text_y:              dw 0
-s4_draw_x:              dw 0
-s4_draw_left:           dw 0
-s4_measure_width:       dw 0
-s4_result:              db 0
-s4_saved_error:         db 0
-s4_reason:              db 0
-s4_maxlen:              db 0
-s4_len:                 db 0
-s4_original_cursor:     db 0
-s4_original_scroll:     db 0
-s4_measure_index:       db 0
-s4_draw_index:          db 0
-s4_draw_char:           db 0
-s4_draw_char_width:     db 0
-s4_background_color:    db 0
-s4_caret_ticks:         db 0
-s4_focus_limit:         db 0
-s4_focus_left:          db 0
-s4_focus_candidate:     db #ff
-s4_old_focus:           db #ff
-s4_cursor_hidden:       db 0
-s4_press_value:         db 0
-s4_focus_sync_valid:    db 0
-s4_focus_sync_value:    db 0
-s4_input_kind:          db 0
-s4_key_ascii:           db 0
-s4_key_scan:            db 0
-s4_work_cursor:         db 0
-s4_edit_scratch:        ds WIN_EDIT_SIZE,0
-s4_original_buffer:     ds 64,0
+; Font loading is not re-entrant with editing or tracking, so Stage 4 reuses
+; the otherwise idle path_scratch area instead of growing the L0 image.
+s4_edit_ptr             equ path_scratch+0
+s4_active_edit_ptr      equ path_scratch+2
+s4_track_ptr            equ path_scratch+4
+s4_control_ptr          equ path_scratch+6
+s4_buffer_ptr           equ path_scratch+8
+s4_data_ptr             equ path_scratch+10
+s4_insert_ptr           equ path_scratch+12
+s4_content_x            equ path_scratch+14
+s4_content_w            equ path_scratch+16
+s4_caret_x              equ path_scratch+18
+s4_text_y               equ path_scratch+20
+s4_draw_x               equ path_scratch+22
+s4_draw_left            equ path_scratch+24
+s4_measure_width        equ path_scratch+26
+s4_result               equ path_scratch+28
+s4_saved_error          equ path_scratch+29
+s4_reason               equ path_scratch+30
+s4_maxlen               equ path_scratch+31
+s4_len                  equ path_scratch+32
+s4_original_cursor      equ path_scratch+33
+s4_original_scroll      equ path_scratch+34
+s4_measure_index        equ path_scratch+35
+s4_draw_index           equ path_scratch+36
+s4_draw_char            equ path_scratch+37
+s4_draw_char_width      equ path_scratch+38
+s4_background_color     equ path_scratch+39
+s4_caret_ticks          equ path_scratch+40
+s4_focus_limit          equ path_scratch+41
+s4_focus_left           equ path_scratch+42
+s4_focus_candidate      equ path_scratch+43
+s4_old_focus            equ path_scratch+44
+s4_cursor_hidden        equ path_scratch+45
+s4_press_value          equ path_scratch+46
+s4_focus_sync_valid     equ path_scratch+47
+s4_focus_sync_value     equ path_scratch+48
+s4_input_kind           equ path_scratch+49
+s4_key_ascii            equ path_scratch+50
+s4_key_scan             equ path_scratch+51
+s4_key_mods             equ path_scratch+52
+s4_work_cursor          equ s4_key_mods
+s4_edit_scratch         equ path_scratch+53
+s4_original_buffer      equ path_scratch+69
         ifdef WIN320_TEST_BUILD
-s4_test_caret_toggles:  db 0
-s4_test_caret_saves:    db 0
-s4_test_caret_restores: db 0
-s4_test_mouse_hits:     db 0
+s4_test_caret_toggles   equ path_scratch+133
+s4_test_caret_saves     equ path_scratch+134
+s4_test_caret_restores  equ path_scratch+135
+s4_test_mouse_hits      equ path_scratch+136
+s4_test_full_edit_renders equ path_scratch+137
         endif

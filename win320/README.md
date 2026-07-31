@@ -41,8 +41,12 @@ both buffers, Stage-3 event tracking, and Stage-4 ASCIIZ/Pascal editing and
 keyboard focus on both screens.
 
 On each Stage-4 screen, edit the field and use Enter to accept or Esc to
-restore it. Tab moves focus to `Continue`; Enter or Space must animate and
-activate the button, while another Tab returns to the field. The label reports
+restore it. Ctrl+Left/Right moves between words using the same separators as
+FlexNavigator (space, comma, period, and backslash). Tab moves focus to
+`Continue`; Enter or Space must animate and activate the button, while another
+Tab returns to the field. Tab/mouse and programmatic `win_update` focus changes
+repaint only the edit content, leaving its frame and field background stable.
+The label reports
 which exit path was received before the test advances. A click inside the
 active field moves the insertion cursor to the clicked proportional glyph;
 clicks on other controls still finish with `WIN_ED_MOUSE`. While editing, the

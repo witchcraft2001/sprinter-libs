@@ -101,6 +101,42 @@ class Stage4ContractTests(unittest.TestCase):
         self.assertIn("call s4_focus_click", STAGE3)
         self.assertIn("WIN_TRK_TAB_FOCUS", STAGE4)
         self.assertIn("s4_clear_hidden_focus", STAGE4)
+        edit_item = STAGE4.split("s4_edit_draw_item:", 1)[1].split(
+            "s4_preflight_edit_item:", 1
+        )[0]
+        self.assertIn("jp s4_render_loaded_edit", edit_item)
+        self.assertIn("s2_item_rendered", edit_item)
+        self.assertIn("jp c,s4_render_edit_content", edit_item)
+        focus_redraw = STAGE4.split("s4_redraw_focus_index:", 1)[1].split(
+            "s4_cursor_hide:", 1
+        )[0]
+        self.assertIn("ld a,#80", focus_redraw)
+        self.assertIn("jp s2_process_item_marked", focus_redraw)
+        update = STAGE2.split("s2_win_update:", 1)[1].split(
+            "s2_load_window:", 1
+        )[0]
+        self.assertIn("ld a,#80", update)
+        self.assertIn("call s2_process_item_marked", update)
+
+    def test_ctrl_arrows_follow_flexnavigator_word_boundaries(self) -> None:
+        editor = STAGE4.split("s4_edit_run:", 1)[1].split(
+            "s4_validate_edit_track:", 1
+        )[0]
+        self.assertGreaterEqual(editor.count("ld a,(s4_key_mods)"), 2)
+        self.assertGreaterEqual(editor.count("bit 5,a"), 2)
+        self.assertIn(".word_left:", editor)
+        self.assertIn(".word_right:", editor)
+        separators = STAGE4.split("s4_is_word_separator:", 1)[1].split(
+            "s4_insert_char:", 1
+        )[0]
+        for char in ("' '", "','", "'.'", "'\\'"):
+            self.assertIn(f"cp {char}", separators)
+        input_path = STAGE4.split("s4_edit_next_input:", 1)[1].split(
+            "s4_is_word_separator:", 1
+        )[0]
+        self.assertIn("WIN_TRK_KEY_MODS", input_path)
+        self.assertIn("ld a,b", input_path)
+        self.assertGreaterEqual(input_path.count("ld (s4_key_mods),a"), 2)
 
     def test_keyboard_activation_uses_three_halt_ticks(self) -> None:
         activation = STAGE4.split("s4_activate_focused_button:", 1)[1].split(
@@ -122,7 +158,7 @@ class Stage4ContractTests(unittest.TestCase):
             self.assertIn(token, editor)
         self.assertIn("ld hl,s4_original_buffer", editor)
         self.assertIn("ld de,(s4_buffer_ptr)", editor)
-        self.assertIn("s4_original_buffer:     ds 64,0", STAGE4)
+        self.assertIn("s4_original_buffer      equ path_scratch+69", STAGE4)
 
     def test_z80_harness_covers_formats_focus_editing_and_rollback(self) -> None:
         for token in (
@@ -132,6 +168,7 @@ class Stage4ContractTests(unittest.TestCase):
             "keys_space", "mock_mouse_buttons", "mock_hide_fail_from",
             "mock_key_delay", "test_caret_blink", "s4_test_caret_toggles",
             "s4_test_caret_saves", "s4_test_caret_restores",
+            "s4_test_full_edit_renders", "keys_word_navigation",
             "mock_click_phase", "test_mouse_cursor",
             "test_error_consistency", "WIN_IT_HIDDEN",
             "call win_edit_draw", "call win_update", "call win_poll",

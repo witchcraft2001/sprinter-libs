@@ -30,7 +30,6 @@ win_draw:
 
 s2_win_draw:
         call s2_load_window
-        or a
         ret nz
 s2_draw_loaded_window:
         call s2_draw_window_body
@@ -123,7 +122,6 @@ win_update:
 
 s2_win_update:
         call s2_load_window
-        or a
         jr z,.loaded
         ld e,0                       ; no item was redrawn on header failure
         ret
@@ -141,17 +139,21 @@ s2_win_update:
         ld hl,(s2_item_ptr)
         inc hl
         bit 0,(hl)
-        jr nz,.redraw
+        jr nz,.dirty
         call s4_item_needs_focus_redraw
         jr nc,.next
+        ld a,#80                     ; focus-only dispatch marker
+        jr .redraw
+.dirty:
+        xor a
 .redraw:
         call s2_load_current_item
-        call s2_process_item
+        call s2_process_item_marked
         or a
         jr nz,.failed
         call s2_clear_item_dirty
         ld a,(s2_item_rendered)
-        or a
+        and 1
         jr z,.next
         ld hl,s2_update_count
         inc (hl)
@@ -180,7 +182,6 @@ s2_load_window:
         ld bc,WIN_WINDOW_SIZE
         ld hl,window_scratch
         call s1_copy_caller_block
-        or a
         ret nz
         ld a,(window_scratch+WIN_WND_FLAGS)
         and #fc
@@ -294,7 +295,6 @@ s2_load_current_item:
         ld de,item_scratch
         ld bc,WIN_ITEM_SIZE
         ldir
-        xor a
         ret
 
 s2_advance_item:
@@ -368,6 +368,7 @@ s2_validate_item:
 ; visual control was actually dispatched.
 s2_process_item:
         xor a
+s2_process_item_marked:
         ld (s2_item_rendered),a
         call s2_validate_item
         or a
@@ -400,8 +401,8 @@ s2_process_item:
         or a
         ret nz
 .dispatch:
-        ld a,1
-        ld (s2_item_rendered),a
+        ld hl,s2_item_rendered
+        set 0,(hl)
         ld de,(item_scratch+WIN_ITEM_CONTROL)
         ld a,(item_scratch+WIN_ITEM_TYPE)
         cp WIN_T_LABEL
@@ -655,7 +656,6 @@ win_open:
 
 s2_win_open:
         call s2_load_window
-        or a
         ret nz
         call s2_preflight_window_body
         or a
