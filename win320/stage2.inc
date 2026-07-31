@@ -51,6 +51,7 @@ s2_draw_loaded_window:
         jr .loop
 .done:
         call s2_restore_origin
+        call s4_publish_last_focus
         xor a
         ret
 .failed:
@@ -140,7 +141,10 @@ s2_win_update:
         ld hl,(s2_item_ptr)
         inc hl
         bit 0,(hl)
-        jr z,.next
+        jr nz,.redraw
+        call s4_item_needs_focus_redraw
+        jr nc,.next
+.redraw:
         call s2_load_current_item
         call s2_process_item
         or a
@@ -156,6 +160,7 @@ s2_win_update:
         jr .loop
 .done:
         call s2_restore_origin
+        call s4_publish_last_focus
         ld a,(s2_update_count)
         ld e,a
         xor a
@@ -171,6 +176,7 @@ s2_win_update:
 
 ; Copy and validate WinWindow, including its complete WinItem array range.
 s2_load_window:
+        ld (s2_window_ptr),de
         ld bc,WIN_WINDOW_SIZE
         ld hl,window_scratch
         call s1_copy_caller_block
@@ -182,14 +188,6 @@ s2_load_window:
         ld a,(window_scratch+WIN_WND_RESERVED)
         or a
         jp nz,.bad
-        ; Focus is deliberately deferred until Stage 4.
-        ld a,(window_scratch+WIN_WND_FOCUS)
-        inc a
-        jp nz,.unsupported
-        ld a,(window_scratch+WIN_WND_LAST_FOCUS)
-        inc a
-        jr nz,.unsupported
-
         ld hl,(window_scratch+WIN_WND_X)
         ld de,320
         or a
@@ -256,7 +254,8 @@ s2_load_window:
         call s1_validate_caller_range
         jr c,.bad
 .no_items:
-        xor a
+        call s4_validate_window_focus
+        or a
         ret
 .unsupported:
         ld a,WIN_ERR_UNSUPPORTED
@@ -269,6 +268,7 @@ s2_load_window:
 
 ; A=index. The full array range was checked by s2_load_window.
 s2_load_item_index:
+        ld (s2_current_index),a
         ld l,a
         ld h,0
         add hl,hl
@@ -285,6 +285,8 @@ s2_begin_item_walk:
         ld (s2_item_ptr),hl
         ld a,(window_scratch+WIN_WND_COUNT)
         ld (s2_items_left),a
+        xor a
+        ld (s2_current_index),a
         ret
 
 s2_load_current_item:
@@ -302,6 +304,8 @@ s2_advance_item:
         ld (s2_item_ptr),hl
         ld hl,s2_items_left
         dec (hl)
+        ld hl,s2_current_index
+        inc (hl)
         ret
 
 s2_validate_item:
@@ -313,12 +317,11 @@ s2_validate_item:
         jr nc,.unsupported
         cp WIN_T_ICON
         jr c,.type_supported
+        cp WIN_T_EDIT
+        jr z,.type_supported
         cp WIN_T_ZONE
         jr nz,.unsupported
 .type_supported:
-        ld a,(item_scratch+WIN_ITEM_FLAGS)
-        and WIN_IT_FOCUSABLE
-        jr nz,.unsupported
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_PRESS|WIN_IT_REPEAT|WIN_IT_HOVER
         jr z,.id
@@ -327,7 +330,7 @@ s2_validate_item:
         jr z,.bad
 .id:
         ld a,(item_scratch+WIN_ITEM_FLAGS)
-        and WIN_IT_HIT|WIN_IT_HOVER
+        and WIN_IT_HIT|WIN_IT_HOVER|WIN_IT_FOCUSABLE
         jr z,.type
         ld a,(item_scratch+WIN_ITEM_ID)
         inc a
@@ -369,6 +372,9 @@ s2_process_item:
         call s2_validate_item
         or a
         ret nz
+        call s4_sync_item_focus
+        or a
+        ret nz
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_HIDDEN
         jr z,.visible
@@ -408,12 +414,15 @@ s2_process_item:
         jp z,win_panel
         cp WIN_T_SEPARATOR
         jp z,win_separator
+        cp WIN_T_EDIT
+        jp z,s4_edit_draw_item
         ; The only remaining Stage-2 visual type is WIN_T_BUTTON.
         ld bc,WIN_BUTTON_SIZE
         ld hl,button_scratch
         call s1_copy_caller_block
         or a
         ret nz
+        call s4_apply_button_focus_scratch
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_DISABLED
         jr z,.button
@@ -421,7 +430,12 @@ s2_process_item:
         or WIN_BTN_DISABLED
         ld (button_scratch+WIN_BTN_FLAGS),a
 .button:
-        jp s1_button_loaded
+        call s1_button_loaded
+        or a
+        ret nz
+        call s4_publish_button_focus
+        xor a
+        ret
 
 s2_process_label:
         ld bc,WIN_LABEL_SIZE
@@ -877,6 +891,8 @@ s2_preflight_type_geometry:
         jr z,.separator
         cp WIN_T_BUTTON
         jr z,.button
+        cp WIN_T_EDIT
+        jp z,s4_preflight_edit_item
         xor a
         ret
 .label:
@@ -1449,10 +1465,12 @@ s2_copy_size:
 ; ---- stage-2 internal state ------------------------------------------------
 
 s2_item_ptr:            dw 0
+s2_window_ptr:          dw 0
 s2_stack_ptr:           dw 0
 s2_saved_origin_x:      dw 0
 s2_saved_origin_y:      db 0
 s2_items_left:          db 0
+s2_current_index:       db 0
 s2_item_rendered:       db 0
 s2_update_count:        db 0
 s2_error:               db 0

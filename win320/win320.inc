@@ -217,6 +217,29 @@ WIN_EV_FOCUS             equ 9
 WIN_REPEAT_DELAY         equ 12
 WIN_REPEAT_RATE          equ 3
 
+; WinEdit (16 bytes).
+WIN_EDIT_SIZE            equ 16
+WIN_ED_X                 equ 0
+WIN_ED_Y                 equ 2
+WIN_ED_WIDTH             equ 4
+WIN_ED_HEIGHT            equ 6
+WIN_ED_ATTR              equ 8
+WIN_ED_FLAGS             equ 9
+WIN_ED_MAXLEN            equ 10
+WIN_ED_LEN               equ 11
+WIN_ED_CURSOR            equ 12
+WIN_ED_SCROLL            equ 13
+WIN_ED_BUFFER            equ 14
+
+WIN_ED_FRAME             equ #01
+WIN_ED_FOCUS             equ #02
+WIN_ED_PASSWORD          equ #04
+
+WIN_ED_ENTER             equ 0
+WIN_ED_ESC               equ 1
+WIN_ED_TAB               equ 2
+WIN_ED_MOUSE             equ 3
+
 WIN_BACKSTORE_MAX_PAGES  equ 4
 WIN_BACKSTORE_MAX_DEPTH  equ 4
 WIN_BACKSTORE_CHUNK      equ 256

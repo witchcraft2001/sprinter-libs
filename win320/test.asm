@@ -66,7 +66,7 @@ start:
         jp nz,self_failed
         push ix
         pop hl
-        ld de,WIN_CAP_CORE|WIN_CAP_PASCAL_STR
+        ld de,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
         or a
         sbc hl,de
         jp nz,self_failed
@@ -147,6 +147,11 @@ start:
         ld a,5
         ld (test_stage),a
         call run_stage3_dialog
+        jp nz,api_failed
+
+        ld a,6
+        ld (test_stage),a
+        call run_stage4_dialogs
         jp nz,api_failed
 
 success:
@@ -319,6 +324,245 @@ run_stage3_dialog:
         call wait_step
         xor a
         ret
+
+run_stage4_dialogs:
+        ; Screen 0: edit remains modal while it owns focus. Tab hands control
+        ; to win_track so Enter/Space really animate and activate the button;
+        ; another Tab returns to the field without requiring a mouse.
+        xor a
+        call select_target_screen
+        ret nz
+        ld e,WIN_TXT_ASCIIZ
+        ld b,WIN_SET_TEXT_FORMAT
+        call call_api
+        ret nz
+        ld de,0
+        ld b,WIN_SET_THEME
+        call call_api
+        ret nz
+        ld d,#ff
+        ld e,WIN_STYLE_CLEAR
+        ld b,WIN_STYLE
+        call call_api
+        ret nz
+        xor a
+        ld (stage4_window_a+WIN_WND_FOCUS),a
+        ld a,#ff
+        ld (stage4_window_a+WIN_WND_LAST_FOCUS),a
+        ld hl,stage4_track_a+WIN_TRK_STATE
+        ld b,8
+.clear_a:
+        ld (hl),0
+        inc hl
+        djnz .clear_a
+        ld de,stage4_window_a
+        ld b,WIN_DRAW
+        call call_api
+        ret nz
+        xor a
+        call show_screen
+        ld c,1
+        rst #30
+        ld b,WIN_WAIT_RELEASE
+        call call_api
+        ret nz
+.edit_a:
+        ld ix,24
+        ld e,36
+        ld b,WIN_SET_ORIGIN
+        call call_api
+        jr nz,.fail_visible_a
+        ld de,stage4_edit_a
+        ld ix,stage4_track_a
+        ld b,WIN_EDIT
+        call call_api
+        ld (stage4_api_status),a
+        ld a,e
+        ld (stage4_reason),a
+        ld ix,0
+        ld e,0
+        ld b,WIN_SET_ORIGIN
+        call call_api
+        jr nz,.fail_visible_a
+        ld a,(stage4_api_status)
+        or a
+        jr nz,.fail_visible_a
+        ld a,(stage4_reason)
+        cp WIN_ED_TAB
+        jr z,.track_a
+        ld c,2
+        rst #30
+        ld a,(stage4_reason)
+        cp WIN_ED_ESC
+        ld hl,str_stage4_result_enter
+        jr nz,.result_a_reason
+        ld hl,str_stage4_result_esc
+.result_a_reason:
+        ld a,(stage4_reason)
+        cp WIN_ED_MOUSE
+        jr nz,.result_a
+        ld hl,str_stage4_result_mouse
+.result_a:
+        ld (stage4_label_a+WIN_LBL_TEXT),hl
+        ld a,WIN_IT_DIRTY
+        ld (stage4_items_a+WIN_ITEM_SIZE+WIN_ITEM_FLAGS),a
+        ld de,stage4_window_a
+        ld b,WIN_UPDATE
+        call call_api
+        ret nz
+        call wait_step
+
+        jr .screen_p
+.fail_visible_a:
+        push af
+        ld c,2
+        rst #30
+        pop af
+        or a
+        ret
+.track_a:
+        ; win_edit leaves the application-owned cursor visible. win_track owns
+        ; visibility during its blocking call, so hand it a hidden cursor.
+        ld c,2
+        rst #30
+.track_a_again:
+        ld de,stage4_track_a
+        ld b,WIN_TRACK
+        call call_api
+        ret nz
+        ld a,(stage4_window_a+WIN_WND_FOCUS)
+        or a
+        jr z,.resume_edit_a
+        ld a,(stage4_track_a+WIN_TRK_EVENT)
+        cp WIN_EV_LCLICK
+        jr nz,.track_a_again
+        ld a,(stage4_track_a+WIN_TRK_ID)
+        cp 21
+        jr nz,.track_a_again
+        ld hl,str_stage4_result_button
+        jp .result_a
+.resume_edit_a:
+        ld c,1
+        rst #30
+        jp .edit_a
+
+        ; Screen 1: Pascal string with password masking and the same focus
+        ; semantics. The backing buffer remains a normal Pascal string.
+.screen_p:
+        ld a,1
+        call select_target_screen
+        ret nz
+        ld e,WIN_TXT_PASCAL
+        ld b,WIN_SET_TEXT_FORMAT
+        call call_api
+        ret nz
+        ld de,blue_theme
+        ld b,WIN_SET_THEME
+        call call_api
+        ret nz
+        ld d,#ff
+        ld e,WIN_STYLE_CLEAR
+        ld b,WIN_STYLE
+        call call_api
+        ret nz
+        xor a
+        ld (stage4_window_p+WIN_WND_FOCUS),a
+        ld a,#ff
+        ld (stage4_window_p+WIN_WND_LAST_FOCUS),a
+        ld hl,stage4_track_p+WIN_TRK_STATE
+        ld b,8
+.clear_p:
+        ld (hl),0
+        inc hl
+        djnz .clear_p
+        ld de,stage4_window_p
+        ld b,WIN_DRAW
+        call call_api
+        ret nz
+        ld a,1
+        call show_screen
+        ld c,1
+        rst #30
+        ld b,WIN_WAIT_RELEASE
+        call call_api
+        ret nz
+.edit_p:
+        ld ix,24
+        ld e,36
+        ld b,WIN_SET_ORIGIN
+        call call_api
+        jr nz,.fail_visible_p
+        ld de,stage4_edit_p
+        ld ix,stage4_track_p
+        ld b,WIN_EDIT
+        call call_api
+        ld (stage4_api_status),a
+        ld a,e
+        ld (stage4_reason),a
+        ld ix,0
+        ld e,0
+        ld b,WIN_SET_ORIGIN
+        call call_api
+        jr nz,.fail_visible_p
+        ld a,(stage4_api_status)
+        or a
+        jr nz,.fail_visible_p
+        ld a,(stage4_reason)
+        cp WIN_ED_TAB
+        jr z,.track_p
+        ld c,2
+        rst #30
+        ld a,(stage4_reason)
+        cp WIN_ED_ESC
+        ld hl,pstr_stage4_result_enter
+        jr nz,.result_p_reason
+        ld hl,pstr_stage4_result_esc
+.result_p_reason:
+        ld a,(stage4_reason)
+        cp WIN_ED_MOUSE
+        jr nz,.result_p
+        ld hl,pstr_stage4_result_mouse
+.result_p:
+        ld (stage4_label_p+WIN_LBL_TEXT),hl
+        ld a,WIN_IT_DIRTY
+        ld (stage4_items_p+WIN_ITEM_SIZE+WIN_ITEM_FLAGS),a
+        ld de,stage4_window_p
+        ld b,WIN_UPDATE
+        call call_api
+        ret nz
+        call wait_step
+        xor a
+        ret
+.fail_visible_p:
+        push af
+        ld c,2
+        rst #30
+        pop af
+        or a
+        ret
+.track_p:
+        ld c,2
+        rst #30
+.track_p_again:
+        ld de,stage4_track_p
+        ld b,WIN_TRACK
+        call call_api
+        ret nz
+        ld a,(stage4_window_p+WIN_WND_FOCUS)
+        or a
+        jr z,.resume_edit_p
+        ld a,(stage4_track_p+WIN_TRK_EVENT)
+        cp WIN_EV_LCLICK
+        jr nz,.track_p_again
+        ld a,(stage4_track_p+WIN_TRK_ID)
+        cp 31
+        jr nz,.track_p_again
+        ld hl,pstr_stage4_result_button
+        jp .result_p
+.resume_edit_p:
+        ld c,1
+        rst #30
+        jp .edit_p
 
 wait_step:
         ld c,DSS_WAITKEY
@@ -707,11 +951,77 @@ modal_b_label:
         db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL
         dw str_modal_b
 
+; ---- Stage-4 edit/focus dialogs -----------------------------------------
+
+stage4_window_a:
+        dw 24,36,272,160
+        db #ff,0,3,0
+        dw stage4_items_a
+        db #ff,0
+stage4_items_a:
+        db WIN_T_EDIT,WIN_IT_HIT|WIN_IT_FOCUSABLE,20,0
+        dw stage4_edit_a,stage4_buffer_a
+        db WIN_T_LABEL,0,#ff,0
+        dw stage4_label_a,0
+        db WIN_T_BUTTON,WIN_IT_HIT|WIN_IT_FOCUSABLE,21,0
+        dw stage4_button_a,0
+stage4_edit_a:
+        dw 20,54,232,16
+        db #ff,WIN_ED_FRAME,32,0,0,0
+        dw stage4_buffer_a
+stage4_label_a:
+        dw 12,16,248,24
+        db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL|WIN_LABEL_CLIP
+        dw str_stage4_edit
+stage4_button_a:
+        dw 76,104,120,20
+        db #ff,0
+        dw str_stage4_button
+stage4_buffer_a:
+        db "edit this text",0
+        ds 33-15,0
+stage4_track_a:
+        dw stage4_window_a,0
+        db 0,WIN_TRK_HALT|WIN_TRK_SHOW_CUR|WIN_TRK_TAB_FOCUS
+        ds WIN_TRACK_SIZE-6,0
+
+stage4_window_p:
+        dw 24,36,272,160
+        db #ff,0,3,0
+        dw stage4_items_p
+        db #ff,0
+stage4_items_p:
+        db WIN_T_EDIT,WIN_IT_HIT|WIN_IT_FOCUSABLE,30,0
+        dw stage4_edit_p,stage4_buffer_p
+        db WIN_T_LABEL,0,#ff,0
+        dw stage4_label_p,0
+        db WIN_T_BUTTON,WIN_IT_HIT|WIN_IT_FOCUSABLE,31,0
+        dw stage4_button_p,0
+stage4_edit_p:
+        dw 20,54,232,16
+        db #ff,WIN_ED_FRAME|WIN_ED_PASSWORD,32,0,0,0
+        dw stage4_buffer_p
+stage4_label_p:
+        dw 12,16,248,24
+        db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL|WIN_LABEL_CLIP
+        dw pstr_stage4_edit
+stage4_button_p:
+        dw 76,104,120,20
+        db #ff,0
+        dw pstr_stage4_button
+stage4_buffer_p:
+        db 6,"secret"
+        ds 32-6,0
+stage4_track_p:
+        dw stage4_window_p,0
+        db 0,WIN_TRK_HALT|WIN_TRK_SHOW_CUR|WIN_TRK_TAB_FOCUS
+        ds WIN_TRACK_SIZE-6,0
+
 blue_theme:
         db 15,1,9,3,15,8,0,15
         db 3,15,1,11,1,9,#55,0
 
-str_title:       db "WIN320 Stage 3 / screen 0 / ASCIIZ",0
+str_title:       db "WIN320 Stage 4 / screen 0 / ASCIIZ",0
 str_long:        db "Clipped proportional label with a deliberately long tail",0
 str_font_ok:     db "Embedded WF32 survived failed win_load_font",0
 str_normal:      db "Normal",0
@@ -727,19 +1037,31 @@ str_item_disabled: db "Item-disabled",0
 str_modal_a:     db "Modal A saved on screen 0",0
 str_nested_next: db "Next: screen 1",0
 str_modal_b:     db "Nested modal B / screen 1",0
+str_stage4_edit: db "Edit: Enter accept, Esc undo, Tab Continue",0
+str_stage4_button: db "Continue",0
+str_stage4_result_enter: db "Enter: accepted. Press any key",0
+str_stage4_result_esc: db "Esc: original restored. Press any key",0
+str_stage4_result_mouse: db "Mouse event accepted. Press any key",0
+str_stage4_result_button: db "Continue activated. Press any key",0
 
-pstr_title:      db 39,"WIN320 Stage 3 / screen 1 / Pascal text"
+pstr_title:      db 39,"WIN320 Stage 4 / screen 1 / Pascal text"
 pstr_long:       db 55,"Alternate theme, centered and clipped Pascal label tail"
 pstr_hint:       db 17,"Escape: exit test"
 pstr_normal:     db 6,"Normal"
 pstr_focus:      db 5,"Focus"
 pstr_pressed:    db 7,"Pressed"
 pstr_disabled:   db 8,"Disabled"
+pstr_stage4_edit: db 46,"Password: Enter accept, Esc undo, Tab Continue"
+pstr_stage4_button: db 8,"Continue"
+pstr_stage4_result_enter: db 33,"Enter: password accepted. Any key"
+pstr_stage4_result_esc: db 31,"Esc: password restored. Any key"
+pstr_stage4_result_mouse: db 29,"Mouse event accepted. Any key"
+pstr_stage4_result_button: db 27,"Continue activated. Any key"
 
 missing_font:    db "__WIN320_MISSING__.FNT",0
 dll_name:        db "WIN320.DLL",0
-msg_banner:      db "WIN320 Stage 3 visual test",13,10,0
-msg_ok:          db "PASS: declarative, dirty and modal sequence.",13,10,0
+msg_banner:      db "WIN320 Stage 4 visual test",13,10,0
+msg_ok:          db "PASS: Stage 4 editing and focus sequence.",13,10,0
 msg_failed:      db "FAIL: stage=$",0
 msg_status:      db " status=$",0
 msg_load_failed: db "FAIL: load reason=$",0
@@ -750,6 +1072,8 @@ char_buffer:     db 0,0
 dll_handle:      dw 0
 dll_loaded:      db 0
 api_status:      db 0
+stage4_api_status: db 0
+stage4_reason:   db 0
 test_stage:      db 0
 old_mode:        db 0
 old_screen:      db 0

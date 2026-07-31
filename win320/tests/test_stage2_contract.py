@@ -28,7 +28,8 @@ class Stage2ContractTests(unittest.TestCase):
         )[0]
         self.assertIn("ld hl,button_scratch", button)
         self.assertIn("or WIN_BTN_DISABLED", button)
-        self.assertIn("jp s1_button_loaded", button)
+        self.assertIn("call s1_button_loaded", button)
+        self.assertIn("call s4_publish_button_focus", button)
         self.assertNotIn("ld (de),a", button)
         self.assertIn("s1_button_loaded:", STAGE1)
 
@@ -68,18 +69,18 @@ class Stage2ContractTests(unittest.TestCase):
             for instruction in wrappers[label]:
                 self.assertIn(instruction, body, (label, instruction))
 
-    def test_focus_is_deferred_and_unsupported_types_remain_reserved(self) -> None:
+    def test_focus_and_edit_are_delegated_to_stage4(self) -> None:
         header = STAGE2.split("s2_load_window:", 1)[1].split(
             "s2_load_item_index:", 1
         )[0]
         item = STAGE2.split("s2_validate_item:", 1)[1].split(
             "s2_process_item:", 1
         )[0]
-        self.assertIn("WIN_WND_FOCUS", header)
-        self.assertIn("WIN_WND_LAST_FOCUS", header)
-        self.assertIn("WIN_ERR_UNSUPPORTED", header)
+        self.assertIn("call s4_validate_window_focus", header)
+        self.assertIn("s2_window_ptr", header)
         self.assertIn("WIN_IT_FOCUSABLE", item)
         self.assertIn("WIN_T_ICON", item)
+        self.assertIn("WIN_T_EDIT", item)
         self.assertIn("WIN_T_ZONE", item)
 
     def test_backstore_row_has_one_mapping_and_256_plus_remainder_copy(self) -> None:

@@ -1,4 +1,4 @@
-; WIN320.DLL — stage 2 windows, dirty update and modal backstore.
+; WIN320.DLL — stage 4 editing and keyboard focus.
 ; Public ABI is described in specs.md and win320.inc.
 
         ifndef WIN320_TEST_BUILD
@@ -44,8 +44,8 @@
         jp win_track                ; 26
         jp win_wait_release         ; 27
         jp win_set_cursor           ; 28
-        jp win_reserved             ; 29
-        jp win_reserved             ; 30
+        jp win_edit_draw            ; 29
+        jp win_edit                 ; 30
         jp win_reserved             ; 31
         jp win_reserved             ; 32
         jp win_reserved             ; 33
@@ -284,7 +284,7 @@ win_set_screen:
 win_get_version:
         ld d,1
         ld e,0
-        ld ix,WIN_CAP_CORE|WIN_CAP_PASCAL_STR
+        ld ix,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
         xor a
         scf
         ccf
@@ -327,6 +327,7 @@ win_get_config:
         include "stage1.inc"
         include "stage2.inc"
         include "stage3.inc"
+        include "stage4.inc"
 
 win_reserved:
         ld a,WIN_ERR_UNSUPPORTED
@@ -446,7 +447,7 @@ build_config:
         ld (config_buffer+10),a
         ld a,FONT320_HEIGHT
         ld (config_buffer+11),a
-        ld hl,WIN_CAP_PASCAL_STR
+        ld hl,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
         ld (config_buffer+12),hl
         ld a,(font_page)
         ld (config_buffer+14),a
@@ -790,7 +791,11 @@ win_scankey_call:
 
 win_halt_call:
         ifdef WIN320_TEST_BUILD
+        ifdef WIN320_TEST_HALT_HOOK
+        jp win_test_halt_call
+        else
         ret
+        endif
         else
         halt
         ret

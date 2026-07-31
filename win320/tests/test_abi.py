@@ -23,7 +23,7 @@ def equates() -> dict[str, int]:
 
 
 class AbiTests(unittest.TestCase):
-    def test_stage3_entries_and_frozen_table(self) -> None:
+    def test_stage4_entries_and_frozen_table(self) -> None:
         values = equates()
         self.assertEqual(0, values["WIN_INIT"])
         self.assertEqual(5, values["WIN_GET_CONFIG"])
@@ -65,7 +65,11 @@ class AbiTests(unittest.TestCase):
             ["win_poll", "win_track", "win_wait_release", "win_set_cursor"],
             [label for label, _ in dispatch[25:29]],
         )
-        self.assertTrue(all(label == "win_reserved" for label, _ in dispatch[29:]))
+        self.assertEqual(
+            ["win_edit_draw", "win_edit"],
+            [label for label, _ in dispatch[29:31]],
+        )
+        self.assertTrue(all(label == "win_reserved" for label, _ in dispatch[31:]))
 
     def test_error_and_config_layout(self) -> None:
         values = equates()
@@ -186,7 +190,7 @@ class AbiTests(unittest.TestCase):
         self.assertIn("textcore_palette_base:", core)
         self.assertIn("or (hl)", core)
 
-    def test_stage3_keeps_implementation_version_and_claims_core(self) -> None:
+    def test_stage4_keeps_implementation_version_and_claims_features(self) -> None:
         source = (ROOT / "win320.asm").read_text()
         self.assertIn(
             "dw #0001                    ; implementation 0.1",
@@ -195,7 +199,37 @@ class AbiTests(unittest.TestCase):
         version = source.split("win_get_version:", 1)[1].split(
             "win_get_config:", 1
         )[0]
-        self.assertIn("ld ix,WIN_CAP_CORE|WIN_CAP_PASCAL_STR", version)
+        self.assertIn(
+            "ld ix,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR",
+            version,
+        )
+        config = source.split("build_config:", 1)[1].split(
+            "validate_config_destination:", 1
+        )[0]
+        self.assertIn(
+            "ld hl,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR",
+            config,
+        )
+
+    def test_stage4_edit_layout_flags_and_reasons(self) -> None:
+        values = equates()
+        self.assertEqual(16, values["WIN_EDIT_SIZE"])
+        self.assertEqual(0, values["WIN_ED_X"])
+        self.assertEqual(8, values["WIN_ED_ATTR"])
+        self.assertEqual(10, values["WIN_ED_MAXLEN"])
+        self.assertEqual(14, values["WIN_ED_BUFFER"])
+        self.assertEqual(
+            [1, 2, 4],
+            [values[name] for name in (
+                "WIN_ED_FRAME", "WIN_ED_FOCUS", "WIN_ED_PASSWORD"
+            )],
+        )
+        self.assertEqual(
+            list(range(4)),
+            [values[name] for name in (
+                "WIN_ED_ENTER", "WIN_ED_ESC", "WIN_ED_TAB", "WIN_ED_MOUSE"
+            )],
+        )
 
     def test_stage3_event_abi_layout_and_constants(self) -> None:
         values = equates()

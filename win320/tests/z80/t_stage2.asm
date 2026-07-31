@@ -337,7 +337,7 @@ start:
         call t_expect_z
         push ix
         pop hl
-        ld de,WIN_CAP_CORE|WIN_CAP_PASCAL_STR
+        ld de,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
         or a
         sbc hl,de
         ld a,5
@@ -486,7 +486,7 @@ test_draw_update:
         ld de,draw_window
         ld ix,0
         call win_draw_item
-        cp WIN_ERR_UNSUPPORTED
+        cp WIN_ERR_ARGUMENT
         ld a,27
         call t_expect_z
         xor a
@@ -537,7 +537,7 @@ test_draw_update:
         ld (draw_window+WIN_WND_FOCUS),a
         ld de,draw_window
         call win_update
-        cp WIN_ERR_UNSUPPORTED
+        cp WIN_ERR_ARGUMENT
         ld a,35
         call t_expect_z
         ld a,e

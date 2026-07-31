@@ -21,7 +21,7 @@ byte_at() {
 }
 
 cd "$repo_root"
-for stage in stage0 stage1 stage2 stage3; do
+for stage in stage0 stage1 stage2 stage3 stage4; do
     src="$repo_root/tests/z80/t_${stage}.asm"
     bin="$build_dir/t_${stage}.bin"
     dump="$build_dir/t_${stage}.out"
@@ -34,10 +34,10 @@ for stage in stage0 stage1 stage2 stage3; do
     rm -f "$dump"
     "$ticks" -pc 0 -counter 60000000 -output "$dump" "$bin" >/dev/null 2>&1 || true
 
-    done_marker="$(byte_at "$dump" $((0xf801)))"
-    result="$(byte_at "$dump" $((0xf800)))"
-    first="$(byte_at "$dump" $((0xf802)))"
-    fails="$(byte_at "$dump" $((0xf803)))"
+    done_marker="$(byte_at "$dump" $((0xff01)))"
+    result="$(byte_at "$dump" $((0xff00)))"
+    first="$(byte_at "$dump" $((0xff02)))"
+    fails="$(byte_at "$dump" $((0xff03)))"
 
     if [ "$done_marker" != 165 ]; then
         echo "FAIL: WIN320 Z80 $stage harness did not complete (marker=$done_marker)"

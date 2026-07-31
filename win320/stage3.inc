@@ -267,9 +267,16 @@ s3_poll:
         ld (s3_mouse_y),a
         call s3_store_mouse_output
         call s3_mouse_iteration
-        jr c,.commit                 ; a mouse event has priority over key
+        jr nc,.keyboard
+        ld a,(s3_runtime_error)
+        or a
+        jr nz,.runtime_error
+        jr .commit                    ; a mouse event has priority over key
 .keyboard:
         call s3_keyboard_iteration
+        ld a,(s3_runtime_error)
+        or a
+        jr nz,.runtime_error
 .commit:
         call s3_commit
         xor a
@@ -282,6 +289,9 @@ s3_poll:
         ret
 .unsupported:
         ld a,WIN_ERR_UNSUPPORTED
+        scf
+        ret
+.runtime_error:
         scf
         ret
 .return_error:
@@ -297,8 +307,6 @@ s3_preflight:
         ld a,(s3_track_scratch+WIN_TRK_OPTIONS)
         and #e0
         jr nz,.bad
-        bit 4,a
-        jr nz,.unsupported           ; focus is Stage 4
         call s3_validate_keys
         or a
         ret nz
@@ -312,10 +320,6 @@ s3_preflight:
         jp s3_validate_items
 .bad:
         ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
-.unsupported:
-        ld a,WIN_ERR_UNSUPPORTED
         or a
         ret
 
@@ -365,15 +369,15 @@ s3_validate_items:
         ret
 
 s3_validate_item:
+        call s2_validate_item
+        or a
+        ret nz
         ld a,(item_scratch+WIN_ITEM_RESERVED)
         or a
         jr nz,.bad
         ld a,(item_scratch+WIN_ITEM_TYPE)
         cp WIN_T_ZONE+1
         jr nc,.unsupported
-        ld a,(item_scratch+WIN_ITEM_FLAGS)
-        and WIN_IT_FOCUSABLE
-        jr nz,.unsupported
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_PRESS|WIN_IT_REPEAT|WIN_IT_HOVER
         jr z,.flags_ok
@@ -425,6 +429,7 @@ s3_validate_item:
 
 s3_clear_output:
         xor a
+        ld (s3_runtime_error),a
         ld (s3_track_scratch+WIN_TRK_EVENT),a
         ld (s3_track_scratch+WIN_TRK_ID),a
         ld a,#ff
@@ -558,11 +563,11 @@ s3_point_in_geometry:
         ld de,(window_scratch+WIN_WND_X)
         or a
         sbc hl,de
-        ret c
+        jr c,.outside
         ld de,(control_geometry+0)
         or a
         sbc hl,de
-        ret c
+        jr c,.outside
         ld de,(control_geometry+4)
         or a
         sbc hl,de
@@ -573,16 +578,19 @@ s3_point_in_geometry:
         ld de,(window_scratch+WIN_WND_Y)
         or a
         sbc hl,de
-        ret c
+        jr c,.outside
         ld de,(control_geometry+2)
         or a
         sbc hl,de
-        ret c
+        jr c,.outside
         ld de,(control_geometry+6)
         or a
         sbc hl,de
         ret nc
         scf
+        ret
+.outside:
+        or a
         ret
 
 s3_left_action:
@@ -751,6 +759,8 @@ s3_keyboard_iteration:
         ld (s3_track_scratch+WIN_TRK_KEY_SCAN),a
         ld a,b
         ld (s3_track_scratch+WIN_TRK_KEY_MODS),a
+        call s4_keyboard_focus
+        ret c
         call s3_find_key
         ret nc
         ret
@@ -859,12 +869,25 @@ s3_emit_capture:
         ld a,(s3_pending_event)
         ; fall through
 s3_emit_index:
+        ld (s3_pending_event),a
+        cp WIN_EV_LCLICK
+        jr nz,.focused
+        call s4_focus_click
+        or a
+        jr z,.focused
+        ld (s3_runtime_error),a
+        scf
+        ret
+.focused:
+        ld a,(s3_pending_event)
         ld (s3_track_scratch+WIN_TRK_EVENT),a
         call s3_load_event_item
         ld a,(s3_event_index)
         ld (s3_track_scratch+WIN_TRK_INDEX),a
         ld a,(item_scratch+WIN_ITEM_ID)
         ld (s3_track_scratch+WIN_TRK_ID),a
+        ld hl,(s2_item_ptr)
+        ld (s3_track_scratch+WIN_TRK_ITEM),hl
         ld hl,(item_scratch+WIN_ITEM_USER_DATA)
         ld (s3_track_scratch+WIN_TRK_USER_DATA),hl
         ld a,(s3_mouse_buttons)
@@ -1012,6 +1035,7 @@ s3_press_value:        db 0
 s3_button_ptr:         dw 0
 s3_button_draw_error:  db 0
 s3_cursor_hidden:      db 0
+s3_runtime_error:      db 0
 s3_cursor_scratch:     ds WIN_CURSOR_SIZE,0
 s3_cursor_pixels:      dw 0
 s3_track_scratch:      ds WIN_TRACK_SIZE,0

@@ -247,7 +247,7 @@ start:
         ld a,3
         call t_expect_z
 
-        ; Theme validation is atomic and Stage 3 advertises the core feature.
+        ; Theme validation is atomic and Stage 4 advertises all live features.
         ld de,custom_theme
         call win_set_theme
         or a
@@ -269,7 +269,7 @@ start:
         call win_get_version
         push ix
         pop hl
-        ld de,WIN_CAP_CORE|WIN_CAP_PASCAL_STR
+        ld de,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
         or a
         sbc hl,de
         ld a,8

@@ -23,6 +23,8 @@ class Stage3ContractTests(unittest.TestCase):
         self.assertIn("WIN_IT_HIDDEN|WIN_IT_DISABLED|WIN_IT_HIT", hit)
         point = STAGE3.split("s3_point_in_geometry:", 1)[1].split("s3_left_action:", 1)[0]
         self.assertGreaterEqual(point.count("ret nc"), 2)
+        self.assertIn("jr c,.outside", point)
+        self.assertNotIn("ret c", point)
 
     def test_actions_precede_hover_then_keyboard_and_key_scan_is_raw(self) -> None:
         poll = STAGE3.split("s3_poll:", 1)[1].split("s3_preflight:", 1)[0]
