@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import re
 import unittest
 from pathlib import Path
 
@@ -57,13 +58,18 @@ class FontPayloadTests(unittest.TestCase):
 
     def test_release_has_font_and_stage5_overlay_payloads(self) -> None:
         library = (ROOT / "build" / "WIN320.DLL").read_bytes()
-        self.assertEqual(1, int.from_bytes(library[14:16], "little"))
+        self.assertEqual(2, int.from_bytes(library[14:16], "little"))
         prefix_size = int.from_bytes(library[2:4], "little")
         payload = library[prefix_size:]
         self.assertEqual(b"WF32", payload[:4])
         font_size = 8 + int.from_bytes(payload[6:8], "little")
         self.assertEqual(10616, font_size)
-        self.assertEqual(4 * 2786, len(payload[font_size:]))
+        layout = (ROOT / "win320_layout.inc").read_text()
+        match = re.search(r"^S5_OVERLAY_CODE_SIZE\s+equ\s+#([0-9a-f]+)$",
+                          layout, re.MULTILINE | re.IGNORECASE)
+        self.assertIsNotNone(match)
+        overlay_size = int(match.group(1), 16)
+        self.assertEqual(4 * overlay_size, len(payload[font_size:]))
         self.assertFalse((ROOT / "WIN320.FNT").exists())
 
     def test_attach_rejects_malformed_input(self) -> None:

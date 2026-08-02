@@ -143,7 +143,6 @@ win_set_cursor:
         ld bc,WIN_CURSOR_SIZE
         ld hl,s3_cursor_scratch
         call s1_copy_caller_block
-        or a
         jp nz,.argument
         ld a,(s3_cursor_scratch+WIN_CUR_WIDTH)
         or a
@@ -223,8 +222,6 @@ win_set_cursor:
         pop bc
         pop af
         xor a
-        scf
-        ccf
         ret
 .bios_error:
         pop ix
@@ -284,8 +281,6 @@ s3_poll:
 .commit:
         call s3_commit
         xor a
-        scf
-        ccf
         ret
 .argument:
         ld a,WIN_ERR_ARGUMENT
@@ -323,9 +318,7 @@ s3_preflight:
         ret nz
         jp s3_validate_items
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 s3_validate_keys:
         ld a,(s3_track_scratch+WIN_TRK_KEY_COUNT)
@@ -348,9 +341,7 @@ s3_validate_keys:
         xor a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 s3_validate_items:
         xor a
@@ -376,33 +367,15 @@ s3_validate_item:
         call s2_validate_item
         or a
         ret nz
-        ld a,(item_scratch+WIN_ITEM_RESERVED)
+        call s6_validate_choice_item
         or a
-        jr nz,.bad
-        ld a,(item_scratch+WIN_ITEM_TYPE)
-        cp WIN_T_ZONE+1
-        jr nc,.unsupported
-        ld a,(item_scratch+WIN_ITEM_FLAGS)
-        and WIN_IT_PRESS|WIN_IT_REPEAT|WIN_IT_HOVER
-        jr z,.flags_ok
-        ld a,(item_scratch+WIN_ITEM_FLAGS)
-        and WIN_IT_HIT
-        jr z,.bad
-.flags_ok:
+        ret nz
         ld a,(item_scratch+WIN_ITEM_TYPE)
         or a
         jr nz,.control
-        ld hl,(item_scratch+WIN_ITEM_CONTROL)
-        ld a,h
-        or l
-        jr nz,.bad
         xor a
         ret
 .control:
-        ld hl,(item_scratch+WIN_ITEM_CONTROL)
-        ld a,h
-        or l
-        jr z,.bad
         call s2_load_control_geometry
         or a
         ret nz
@@ -412,24 +385,7 @@ s3_validate_item:
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_HIT
         ret z
-        ld hl,(control_geometry+4)
-        ld a,h
-        or l
-        jr z,.bad
-        ld hl,(control_geometry+6)
-        ld a,h
-        or l
-        jr z,.bad
-        xor a
-        ret
-.unsupported:
-        ld a,WIN_ERR_UNSUPPORTED
-        or a
-        ret
-.bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp s2_require_nonempty_geometry
 
 s3_clear_output:
         xor a
@@ -545,6 +501,9 @@ s3_find_hit:
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_HIDDEN|WIN_IT_DISABLED|WIN_IT_HIT
         cp WIN_IT_HIT
+        jr nz,.next
+        call s6_choice_enabled
+        or a
         jr nz,.next
         call s2_load_control_geometry
         jr nz,.next
@@ -878,6 +837,19 @@ s3_emit_index:
         ld (s3_pending_event),a
         cp WIN_EV_LCLICK
         jr nz,.focused
+        call s6_choice_click
+        jr nc,.normal_click
+        cp WIN_EV_CHANGE
+        jr z,.choice_changed
+        or a
+        ret z                         ; selected radio: absorb the activation
+        ld (s3_runtime_error),a
+        scf
+        ret
+.choice_changed:
+        ld (s3_pending_event),a
+        jr .focused
+.normal_click:
         call s4_focus_click
         or a
         jr z,.focused

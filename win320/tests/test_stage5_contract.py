@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +11,17 @@ STAGE4 = (ROOT / "stage4.inc").read_text()
 STAGE5 = (ROOT / "stage5.inc").read_text()
 VISUAL = (ROOT / "test.asm").read_text()
 MAKEFILE = (ROOT / "Makefile").read_text()
+LAYOUT = (ROOT / "win320_layout.inc").read_text()
+
+
+def layout_value(name: str) -> int:
+    match = re.search(
+        rf"^{name}\s+equ\s+#([0-9a-f]+)$", LAYOUT,
+        re.MULTILINE | re.IGNORECASE,
+    )
+    if match is None:
+        raise AssertionError(f"missing literal layout equate {name}")
+    return int(match.group(1), 16)
 
 
 def decode_l0_image(path: Path) -> tuple[bytes, bytes]:
@@ -40,7 +52,10 @@ def decode_l0_image(path: Path) -> tuple[bytes, bytes]:
 
 class Stage5ContractTests(unittest.TestCase):
     def test_overlay_reclaims_the_consumed_l0_bitmap(self) -> None:
-        self.assertIn("S5_OVERLAY_OFFSET       equ #351e", SOURCE)
+        base = layout_value("S5_OVERLAY_OFFSET")
+        size = layout_value("S5_OVERLAY_CODE_SIZE")
+        self.assertEqual(0x4000, base + size)
+        self.assertIn('include "win320_layout.inc"', SOURCE)
         self.assertIn("s5_overlay_base:", SOURCE)
         self.assertIn("call load_stage5_overlay", SOURCE)
         loader = SOURCE.split("load_stage5_overlay:", 1)[1].split(
@@ -51,28 +66,28 @@ class Stage5ContractTests(unittest.TestCase):
         self.assertIn("ld (s5_overlay_reads),a", loader)
         self.assertIn("cp S5_OVERLAY_CODE_SIZE/256", loader)
         stub = (ROOT / "stage5_stub.inc").read_text()
-        self.assertEqual(6, stub.count("jp s5_overlay_base+"))
+        self.assertEqual(14, stub.count("equ s5_overlay_base+"))
+        jump_table = (ROOT / "stage5_overlay.asm").read_text().split(
+            'include "stage5.inc"', 1
+        )[0]
+        self.assertEqual(15, jump_table.count("        jp "))
         overlay = (ROOT / "build" / "stage5.overlay").read_bytes()
-        self.assertEqual(4 * 2786, len(overlay))
+        self.assertEqual(4 * size, len(overlay))
 
     def test_every_production_overlay_reference_is_relocated(self) -> None:
         code, bitmap = decode_l0_image(ROOT / "build" / "WIN320.DLL")
-        references = [
-            bytes((0xC3, (0x351E + offset) & 0xFF, 0x35))
-            for offset in (0, 3, 6, 9, 12, 15)
-        ]
-        references.extend((bytes((0xCD, 0xD9, 0x30)), bytes((0x21, 0x1E, 0x35))))
-        for instruction in references:
-            positions = [
-                pos for pos in range(len(code))
-                if code.startswith(instruction, pos)
-            ]
-            self.assertEqual(1, len(positions), instruction.hex())
-            high_byte = positions[0] + 2
-            self.assertTrue(
-                bitmap[high_byte // 8] & (0x80 >> (high_byte % 8)),
-                instruction.hex(),
-            )
+        base = layout_value("S5_OVERLAY_OFFSET")
+        expected_offsets = {
+            0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42
+        }
+        relocated_offsets: set[int] = set()
+        for position in range(len(code) - 2):
+            target = code[position + 1] | code[position + 2] << 8
+            high_byte = position + 2
+            relocated = bitmap[high_byte // 8] & (0x80 >> (high_byte % 8))
+            if relocated and base <= target < base + 45:
+                relocated_offsets.add(target - base)
+        self.assertEqual(expected_offsets, relocated_offsets)
 
     def test_composite_hit_detail_is_part_of_the_overlay(self) -> None:
         overlay_source = (ROOT / "stage5_overlay.asm").read_text()
@@ -138,13 +153,14 @@ class Stage5ContractTests(unittest.TestCase):
 
     def test_listbox_focus_is_derived_from_window_focus(self) -> None:
         sync = STAGE4.split("s4_sync_item_focus:", 1)[1].split(
-            "s4_clear_hidden_focus:", 1
+            "s4_cursor_hide:", 1
         )[0]
         redraw = STAGE4.split("s4_item_needs_focus_redraw:", 1)[1].split(
             "; ---- Stage-3 focus", 1
         )[0]
-        self.assertIn("WIN_T_LISTBOX", sync)
-        self.assertIn("WIN_T_LISTBOX", redraw)
+        self.assertIn("call s4_is_focus_visual", sync)
+        self.assertIn("cp WIN_T_LISTBOX", sync)
+        self.assertIn("call s4_is_focus_visual", redraw)
         self.assertIn("s4_focus_sync_value", STAGE5)
         list_draw = STAGE5.split("s5_listbox_draw_ptr:", 1)[1].split(
             "s5_load_listbox:", 1
@@ -159,8 +175,13 @@ class Stage5ContractTests(unittest.TestCase):
             "s5_set_track_fill:", 1
         )[0]
         self.assertIn("jp s1_panel_mapped", raised)
-        self.assertIn("ld (rect_w),hl", STAGE5)
-        self.assertIn("ld (rect_h),hl", STAGE5)
+        track = STAGE5.split("s5_set_track_fill:", 1)[1].split(
+            "s5_publish_scrollbar:", 1
+        )[0]
+        self.assertIn("ld de,rect_x", track)
+        self.assertIn("ld bc,8", track)
+        self.assertIn("ld (rect_w),de", track)
+        self.assertIn("ld (rect_h),de", track)
 
     def test_incremental_scroll_uses_pixel_move_and_small_repaints(self) -> None:
         scroll = STAGE5.split("s5_listbox_scroll_pixels:", 1)[1].split(
@@ -237,6 +258,10 @@ class Stage5ContractTests(unittest.TestCase):
             "cp #58", "cp #52", "cp #59", "cp #53",
         ):
             self.assertIn(token, interactive)
+        key_path = interactive.split(".key:", 1)[1].split(".up:", 1)[0]
+        self.assertIn("ld a,(stage5_window+WIN_WND_FOCUS)", key_path)
+        self.assertIn("cp 1", key_path)
+        self.assertIn("jp nz,.track", key_path)
         self.assertIn("WIN_TRK_ANY_KEY|WIN_TRK_OUTSIDE", VISUAL)
         self.assertIn(
             'str_stage5_hint: db "Arrows/PgUp/PgDn, mouse or Tab; Esc exits",0',

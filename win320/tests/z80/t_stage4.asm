@@ -24,6 +24,12 @@ mock_mouse_buttons:     db 0
 saved_page:             db 0
 saved_edit:             ds WIN_EDIT_SIZE,0
 
+        ifdef WIN320_STAGE5_TEST
+T_VRAM_WINDOW equ 3
+        else
+T_VRAM_WINDOW equ 1
+        endif
+
 edit_buffer:            db "abc",0,#a1,#a2,#a3,#a4,#a5
 edit_buffer_original:   db "abc",0,#a1,#a2,#a3,#a4,#a5
 edit_bad_buffer:        db "123456789"
@@ -158,6 +164,9 @@ win_test_write_page:
         ld hl,mock_pages
         add hl,de
         ld (hl),b
+        ifdef WIN320_STAGE5_TEST
+        jr .software_only
+        endif
         ld a,c
         cp #82
         jr z,.software_only
@@ -329,7 +338,7 @@ start:
         ld a,1
         call t_expect_z
         ld d,0
-        ld e,1
+        ld e,T_VRAM_WINDOW
         call win_set_work_windows
         or a
         ld a,2
@@ -345,6 +354,9 @@ start:
         call test_error_consistency
         ifdef WIN320_STAGE5_TEST
         call test_stage5
+        endif
+        ifdef WIN320_STAGE6_TEST
+        call test_stage6
         endif
         call t_end
         halt
@@ -609,7 +621,7 @@ test_focus:
         ld a,47
         call t_expect_z
 
-        ; Space has exactly the same activation contract as Enter.
+        ; Space is reserved for ABI 1.1 choice controls, not buttons.
         ld hl,keys_space
         ld a,1
         call set_keys
@@ -619,11 +631,11 @@ test_focus:
         ld a,84
         call t_expect_z
         ld a,d
-        cp WIN_EV_LCLICK
+        or a
         ld a,85
         call t_expect_z
         ld a,e
-        cp 10
+        or a
         ld a,86
         call t_expect_z
 
@@ -1134,14 +1146,25 @@ expect_pascal_edit:     db 3,"Qyz"
         ds #2000-$,0
         assert $ == #2000
 win_test_font_memory:
+        ifdef WIN320_STAGE5_TEST
+mock_payload:
+        incbin "build/font.wf32"
+        ds #6000-$,0
+        else
         ds #4000,0
 
         assert $ == #6000
 mock_payload:
         incbin "build/font.wf32"
+        endif
 
-        ds #c000-$,0
-        assert $ == #c000
+        ifdef WIN320_STAGE5_TEST
+WIN320_TEST_CODE_ORG equ #6000
+        else
+WIN320_TEST_CODE_ORG equ #c000
+        endif
+        ds WIN320_TEST_CODE_ORG-$,0
+        assert $ == WIN320_TEST_CODE_ORG
         define WIN320_TEST_BUILD
         define WIN320_TEST_HALT_HOOK
         include "../../win320.asm"

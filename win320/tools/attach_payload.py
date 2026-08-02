@@ -4,7 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
+
+
+def overlay_image_size(root: Path) -> int:
+    pattern = re.compile(r"^S5_OVERLAY_CODE_SIZE\s+equ\s+#([0-9a-fA-F]+)$")
+    for line in (root / "win320_layout.inc").read_text().splitlines():
+        match = pattern.match(line)
+        if match:
+            return int(match.group(1), 16)
+    raise ValueError("invalid WIN320 overlay layout")
 
 
 def attach(prefix: bytes, payload: bytes) -> bytes:
@@ -34,8 +44,11 @@ def main() -> None:
     result = attach(args.prefix.read_bytes(), payload)
     if args.overlay is not None:
         overlay = args.overlay.read_bytes()
-        if len(overlay) != 11144:
-            raise ValueError("Stage-5 overlay must contain four 2786-byte images")
+        image_size = overlay_image_size(args.prefix.resolve().parent.parent)
+        if len(overlay) != 4 * image_size:
+            raise ValueError(
+                f"WIN320 overlay must contain four {image_size}-byte images"
+            )
         result += overlay
     args.output.write_bytes(result)
     print(

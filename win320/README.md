@@ -1,15 +1,22 @@
 # WIN320.DLL
 
-Stage 5 development build of the lightweight 320×256 GUI library described in
-[`specs.md`](specs.md). The release keeps public ABI 1.0 and implements entries
-0–36: lifecycle, fonts, accelerated primitives, declarative windows, dirty
+ABI 1.1 build of the lightweight 320×256 GUI library described in
+[`specs.md`](specs.md). The release implements entries 0–38: lifecycle, fonts,
+accelerated primitives, declarative windows, dirty
 updates, modal backstore, and `win_poll`, `win_track`, `win_wait_release`, and
 `win_set_cursor`, plus `win_edit_draw` and `win_edit`. Keyboard focus,
-Tab/Shift+Tab traversal, mouse focus, and Enter/Space button activation are
+Tab/Shift+Tab traversal, mouse focus, and Enter button activation are
 enabled. Stage-5 entries add 8×8/16×16 opaque or keyed icons, progress bars,
 horizontal/vertical scrollbars, and direct or paged listboxes; all declared
 capability bits are set. The new controls also participate in declarative
 `win_draw`/`win_update`, and listbox focus follows `WinWindow.focus`.
+
+ABI 1.1 adds classic 3D checkbox and radio-button controls. Choice state,
+radio-group exclusivity, mouse/Space activation, radio arrow navigation,
+focus, redraw, and `WIN_EV_CHANGE` are handled by the library. Radio groups
+are scoped to one `WinWindow` and count as one Tab stop. Applications can
+still change `WIN_CH_CHECKED` directly, mark the matching `WinItem` dirty,
+and call `win_update`.
 
 The libman 1.2 L0 prefix has a hard 16-KiB code-plus-relocation limit. Stage 5
 therefore ships as a fixed overlay after the embedded font. `win_init` selects
@@ -66,12 +73,14 @@ both buffers, Stage-3 event tracking, and Stage-4 ASCIIZ/Pascal editing and
 keyboard focus on both screens. Its final Stage-5 screen loads `ICONS.WIP`
 from beside the EXE into application-owned EMM pages, draws keyed 8×8/16×16
 icons, animates progress in both directions, moves the listbox cursor, and
-scrolls the linked scrollbar without reinitializing it.
+scrolls the linked scrollbar without reinitializing it. A separate Stage-6
+screen shows an enabled and disabled checkbox plus two radio groups and a live
+state line; exercise it with mouse, Tab/Shift+Tab, Space, and arrow keys.
 
 On each Stage-4 screen, edit the field and use Enter to accept or Esc to
 restore it. Ctrl+Left/Right moves between words using the same separators as
 FlexNavigator (space, comma, period, and backslash). Tab moves focus to
-`Continue`; Enter or Space must animate and activate the button, while another
+`Continue`; Enter must animate and activate the button, while another
 Tab returns to the field. Tab/mouse and programmatic `win_update` focus changes
 repaint only the edit content, leaving its frame and field background stable.
 The label reports

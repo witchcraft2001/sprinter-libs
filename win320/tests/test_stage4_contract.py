@@ -154,11 +154,16 @@ class Stage4ContractTests(unittest.TestCase):
         focus = STAGE4.split("s4_keyboard_focus:", 1)[1].split(
             "s4_tab_focus:", 1
         )[0]
-        self.assertIn("or a                            ; not consumed", focus)
+        self.assertIn("call s6_choice_key", focus)
+        self.assertIn("ret nc", focus)
         redraw = STAGE4.split("s4_redraw_focus_index:", 1)[1].split(
             "s4_cursor_hide:", 1
         )[0]
-        self.assertIn("cp WIN_T_LISTBOX", redraw)
+        self.assertIn("call s4_is_focus_visual", redraw)
+        visuals = STAGE4.split("s4_is_focus_visual:", 1)[1].split(
+            "s4_cursor_hide:", 1
+        )[0]
+        self.assertIn("cp WIN_T_LISTBOX", visuals)
         harness = (ROOT / "tests" / "z80" / "t_stage4.asm").read_text()
         self.assertIn("keys_arrow_up", harness)
         self.assertIn("cp WIN_EV_KEY", harness)

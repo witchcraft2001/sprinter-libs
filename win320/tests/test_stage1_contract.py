@@ -23,9 +23,17 @@ class Stage1ContractTests(unittest.TestCase):
         self.assertEqual([15, 7, 8, 1, 0, 7, 15, 0,
                           1, 15, 7, 1, 7, 1, 15, 0], values)
 
-        palette = STAGE1.split("ega_palette:", 1)[1]
-        rgb = re.findall(r"#[0-9a-fA-F]{2}", palette)
-        self.assertEqual(16 * 3, len(rgb))
+        palette = STAGE1.split("s1_style_palette_mapped:", 1)[1].split(
+            "; A=EGA colour index", 1
+        )[0]
+        for component in ("ld e,4", "ld e,2", "ld e,1"):
+            self.assertIn(component, palette)
+        self.assertEqual(3, palette.count("call s1_palette_component"))
+        component = STAGE1.split("s1_palette_component:", 1)[1].split(
+            "s1_style_clear_mapped:", 1
+        )[0]
+        for intensity in ("ld a,#80", "ld a,#c0", "ld a,#ff"):
+            self.assertIn(intensity, component)
 
     def test_origin_bounds_use_full_width_arithmetic(self) -> None:
         rect = STAGE1.split("s1_load_rect:", 1)[1].split(
@@ -34,13 +42,14 @@ class Stage1ContractTests(unittest.TestCase):
         for token in (
             "ld de,(origin_x)",
             "ld de,(rect_w)",
-            "ld de,321",
+            "ld bc,320",
             "ld a,(origin_y)",
             "ld de,(rect_h)",
-            "ld de,257",
+            "ld bc,256",
         ):
             self.assertIn(token, rect)
-        self.assertGreaterEqual(rect.count("jr c,.bad"), 4)
+        self.assertEqual(2, rect.count("call s1_validate_axis_window"))
+        self.assertGreaterEqual(rect.count("jr c,s1_rect_bad"), 4)
 
     def test_font_replacement_is_published_after_validation_and_close(self) -> None:
         loader = STAGE1.split("win_load_font:", 1)[1].split(

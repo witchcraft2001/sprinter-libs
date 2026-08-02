@@ -23,19 +23,21 @@ def equates() -> dict[str, int]:
 
 
 class AbiTests(unittest.TestCase):
-    def test_stage5_entries_and_frozen_table(self) -> None:
+    def test_abi11_entries_and_frozen_table(self) -> None:
         values = equates()
         self.assertEqual(0, values["WIN_INIT"])
         self.assertEqual(5, values["WIN_GET_CONFIG"])
         self.assertEqual(17, values["WIN_LABEL"])
         self.assertEqual(36, values["WIN_LISTBOX_DRAW"])
-        self.assertEqual(37, values["WIN_ENTRY_COUNT"])
+        self.assertEqual(37, values["WIN_CHECKBOX"])
+        self.assertEqual(38, values["WIN_RADIOBUTTON"])
+        self.assertEqual(39, values["WIN_ENTRY_COUNT"])
 
         source = (ROOT / "win320.asm").read_text()
         dispatch = re.findall(
             r"^\s+jp\s+([a-zA-Z0-9_]+)\s+;\s*(\d+)", source, re.MULTILINE
         )
-        self.assertEqual(list(range(37)), [int(number) for _, number in dispatch])
+        self.assertEqual(list(range(39)), [int(number) for _, number in dispatch])
         expected_stage1 = [
             "win_load_font",
             "win_set_theme",
@@ -72,7 +74,11 @@ class AbiTests(unittest.TestCase):
         self.assertEqual(
             ["win_icon", "win_progress_init", "win_progress_draw",
              "win_scrollbar_init", "win_scrollbar_draw", "win_listbox_draw"],
-            [label for label, _ in dispatch[31:]],
+            [label for label, _ in dispatch[31:37]],
+        )
+        self.assertEqual(
+            ["win_checkbox", "win_radiobutton"],
+            [label for label, _ in dispatch[37:]],
         )
 
     def test_error_and_config_layout(self) -> None:
@@ -194,24 +200,28 @@ class AbiTests(unittest.TestCase):
         self.assertIn("textcore_palette_base:", core)
         self.assertIn("or (hl)", core)
 
-    def test_stage5_keeps_implementation_version_and_claims_features(self) -> None:
+    def test_abi11_bumps_implementation_version_and_claims_features(self) -> None:
         source = (ROOT / "win320.asm").read_text()
         self.assertIn(
-            "dw #0001                    ; implementation 0.1",
+            "dw #0002                    ; implementation 0.2, public ABI is 1.1",
             source,
         )
         version = source.split("win_get_version:", 1)[1].split(
             "win_get_config:", 1
         )[0]
         self.assertIn(
-            "ld ix,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR",
+            "ld d,1\n        ld e,1",
+            version,
+        )
+        self.assertIn(
+            "WIN_CAP_PASCAL_STR|WIN_CAP_CHECKBOX|WIN_CAP_RADIOBUTTON",
             version,
         )
         config = source.split("build_config:", 1)[1].split(
             "validate_config_destination:", 1
         )[0]
         self.assertIn(
-            "ld hl,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR",
+            "WIN_CAP_PASCAL_STR|WIN_CAP_CHECKBOX|WIN_CAP_RADIOBUTTON",
             config,
         )
 
@@ -261,12 +271,12 @@ class AbiTests(unittest.TestCase):
         self.assertEqual(12, values["WIN_REPEAT_DELAY"])
         self.assertEqual(3, values["WIN_REPEAT_RATE"])
         self.assertEqual(
-            list(range(10)),
+            list(range(11)),
             [values[name] for name in (
                 "WIN_EV_NONE", "WIN_EV_LCLICK", "WIN_EV_RCLICK",
                 "WIN_EV_REPEAT", "WIN_EV_HOTKEY", "WIN_EV_KEY",
                 "WIN_EV_HOVER", "WIN_EV_LEAVE", "WIN_EV_OUTSIDE",
-                "WIN_EV_FOCUS",
+                "WIN_EV_FOCUS", "WIN_EV_CHANGE",
             )],
         )
 

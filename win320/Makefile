@@ -26,14 +26,14 @@ $(FONT_WF32): ../afnt320/font.bin ../afnt320/tools/font_to_accel.py
 	mkdir -p $(BUILD)
 	$(PYTHON) ../afnt320/tools/font_to_accel.py --wf32 $< $@
 
-$(PREFIX): win320.asm stage1.inc stage2.inc stage3.inc stage4.inc stage5_stub.inc win320.inc ../common/fontlayout.inc \
+$(PREFIX): win320.asm stage1.inc stage2.inc stage3.inc stage4.inc stage5_stub.inc win320.inc win320_layout.inc ../common/fontlayout.inc \
 		../common/textcore320.inc
 	mkdir -p $(BUILD)
 	$(LIBMAN_MKDLL) build win320.asm --format l0 --target 1.2 \
 		--assembler sjasmplus --compress --name "WIN320 GUI" \
-		--version 0.1 --date $(BUILD_DATE) -o $@
+		--version 0.2 --date $(BUILD_DATE) -o $@
 
-$(STAGE5_OVERLAY): $(PREFIX) stage5_overlay.asm stage5.inc win320.inc tools/build_stage5_overlay.py
+$(STAGE5_OVERLAY): $(PREFIX) stage5_overlay.asm stage5.inc stage6.inc win320.inc win320_layout.inc tools/build_stage5_overlay.py
 	$(SJASMPLUS) --sym=$(BUILD)/win320.sym --raw=$(BUILD)/win320.symbols.bin win320.asm
 	$(PYTHON) tools/build_stage5_overlay.py --root . --symbols $(BUILD)/win320.sym \
 		--imports $(BUILD)/stage5_symbols.inc --output $@

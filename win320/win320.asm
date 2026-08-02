@@ -1,4 +1,4 @@
-; WIN320.DLL — stage 5 post-MVP controls.
+; WIN320.DLL — ABI 1.1 controls.
 ; Public ABI is described in specs.md and win320.inc.
 
         ifndef WIN320_TEST_BUILD
@@ -10,7 +10,7 @@ win_image_base:
         dw 0,0,0,0
         db 30,7
         dw 2026
-        dw #0001                    ; implementation 0.1, public ABI is 1.0
+        dw #0002                    ; implementation 0.2, public ABI is 1.1
         db "WIN320 GUI",0
         ds 16-11,0
 
@@ -53,6 +53,8 @@ win_image_base:
         jp win_scrollbar_init       ; 34
         jp win_scrollbar_draw       ; 35
         jp win_listbox_draw         ; 36
+        jp win_checkbox             ; 37
+        jp win_radiobutton          ; 38
 
         include "win320.inc"
         include "../common/fontlayout.inc"
@@ -68,8 +70,7 @@ BIOS_GETMEMBLKPAGES     equ #c5
 FONT_STAGE_SIZE         equ 128
 VIDEO_PAGE              equ #50
 SCREEN_STRIDE           equ #0140
-S5_OVERLAY_OFFSET       equ #351e
-S5_OVERLAY_CODE_SIZE    equ 2786
+        include "win320_layout.inc"
 
 ; ---- public stage-0 entry points ------------------------------------------
 
@@ -124,81 +125,15 @@ win_init:
         call win_bios_call
         jp c,.memory_cleanup
 
-        ld hl,io_scratch
-        ld de,WF32_HEADER_SIZE
-        call read_payload
-        jp c,.font_cleanup
-        ld a,d
-        or a
-        jp nz,.font_cleanup
-        ld a,e
-        cp WF32_HEADER_SIZE
-        jp nz,.font_cleanup
-        call validate_wf32_header
-        jp c,.font_cleanup
-
-        xor a
-        ld (copy_offset),a
-        ld (copy_offset+1),a
-        ld a,WF32_HEADER_SIZE
-        ld (copy_count),a
-        ld hl,io_scratch
-        call copy_scratch_to_font
-
-        ld hl,(font_data_size)
-        ld (payload_remaining),hl
-        ld hl,WF32_HEADER_SIZE
-        ld (copy_offset),hl
-.read_loop:
-        ld hl,(payload_remaining)
-        ld a,h
-        or l
-        jr z,.validate
-        ld a,h
-        or a
-        ld a,FONT_STAGE_SIZE
-        jr nz,.count_ready
-        ld a,l
-        cp FONT_STAGE_SIZE
-        jr c,.count_ready
-        ld a,FONT_STAGE_SIZE
-.count_ready:
-        ld (copy_count),a
-        ld e,a
-        ld d,0
-        ld hl,io_scratch
-        call read_payload
-        jr c,.font_cleanup
-        ld a,d
-        or a
-        jr nz,.font_cleanup
-        ld a,(copy_count)
-        cp e
-        jr nz,.font_cleanup
-        ld hl,io_scratch
-        call copy_scratch_to_font
-        ld a,(copy_count)
-        ld e,a
-        ld d,0
-        ld hl,(payload_remaining)
-        or a
-        sbc hl,de
-        ld (payload_remaining),hl
-        ld hl,(copy_offset)
-        add hl,de
-        ld (copy_offset),hl
-        jr .read_loop
-
-.validate:
-        call validate_loaded_font
+        ; win_load_font uses the same read/copy/validate path.  Keeping only
+        ; one implementation also leaves room for ABI-compatible extensions.
+        call s1_read_wf32
         jr c,.font_cleanup
         ifndef WIN320_TEST_BUILD
         call load_stage5_overlay
         jr c,.font_cleanup
         endif
         xor a
-        scf
-        ccf
         ret
 
 .font_cleanup:
@@ -231,8 +166,6 @@ win_free:
         ld a,#c0
         out (YPORT),a
         xor a
-        scf
-        ccf
         ret
 
 ; D=data window, E=VRAM window; each 0..3 or #ff AUTO.
@@ -260,14 +193,10 @@ win_set_work_windows:
         ld (vram_window),a
         pop bc
         xor a
-        scf
-        ccf
         ret
 .window:
         pop bc
-        ld a,WIN_ERR_WINDOW
-        or a
-        ret
+        jp win_error_window
 .bad:
         pop bc
         or a
@@ -279,21 +208,15 @@ win_set_screen:
         jr nc,.bad
         ld (screen_id),a
         xor a
-        scf
-        ccf
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 win_get_version:
         ld d,1
-        ld e,0
-        ld ix,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
+        ld e,1
+        ld ix,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR|WIN_CAP_CHECKBOX|WIN_CAP_RADIOBUTTON
         xor a
-        scf
-        ccf
         ret
 
 win_get_config:
@@ -320,20 +243,36 @@ win_get_config:
         pop bc
         pop hl
         xor a
-        scf
-        ccf
         ret
 .bad:
         pop bc
         pop hl
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
         include "stage1.inc"
         include "stage2.inc"
         include "stage3.inc"
         include "stage4.inc"
+win_reserved:
+        ld a,WIN_ERR_UNSUPPORTED
+        or a
+        ret
+win_error_argument:
+        ld a,WIN_ERR_ARGUMENT
+        or a
+        ret
+win_error_font:
+        ld a,WIN_ERR_FONT
+        or a
+        ret
+win_error_window:
+        ld a,WIN_ERR_WINDOW
+        or a
+        ret
+win_error_memory:
+        ld a,WIN_ERR_MEMORY
+        or a
+        ret
         ifdef WIN320_TEST_BUILD
         ifdef WIN320_STAGE5_TEST
         include "stage5.inc"
@@ -344,12 +283,29 @@ win_progress_draw:
 win_scrollbar_init:
 win_scrollbar_draw:
 win_listbox_draw:
-s5_hit_detail:
-        endif
-win_reserved:
-        ld a,WIN_ERR_UNSUPPORTED
-        or a
+win_checkbox:
+win_radiobutton:
+s6_choice_item:
+        jp win_reserved
+s6_validate_choice_item:
+        xor a
         ret
+s6_choice_enabled:
+        xor a
+        ret
+s6_choice_click:
+        xor a
+        ret
+s6_choice_key:
+        xor a
+        ret
+s6_tab_accept:
+        xor a
+        ret
+s5_hit_detail:
+        xor a
+        ret
+        endif
         else
         include "stage5_stub.inc"
         endif
@@ -413,67 +369,29 @@ validate_window_setting:
         ret
 
 select_data_window:
-        ld hl,0
-        add hl,sp
-        ld a,h
-        and #c0
-        rlca
-        rlca
-        ld (stack_window),a
+        call s1_update_stack_window
         ld a,(data_window)
         cp #ff
         jr z,.auto
-        call data_candidate_ok
+        call s1_candidate_basic
         jr c,.failed
         jr configure_work_window
 .auto:
         xor a
-        call data_candidate_ok
+.loop:
+        call s1_candidate_basic
         jr nc,configure_work_window
-        ld a,1
-        call data_candidate_ok
-        jr nc,configure_work_window
-        ld a,2
-        call data_candidate_ok
-        jr nc,configure_work_window
-        ld a,3
-        call data_candidate_ok
-        jr nc,configure_work_window
+        inc a
+        cp 4
+        jr nz,.loop
 .failed:
         scf
         ret
 
-data_candidate_ok:
-        ld b,a
-        ld a,(code_window)
-        cp b
-        jr z,.bad
-        ld a,(stack_window)
-        cp b
-        jr z,.bad
-        ld a,b
-        or a
-        ret
-.bad:
-        ld a,b
-        scf
-        ret
-
 configure_work_window:
-        ld (work_window),a
         ld b,a
-        add a,a
-        add a,a
-        add a,a
-        add a,a
-        add a,a
-        add a,PAGE_PORT0
+        call s1_window_port_base
         ld (work_page_port),a
-        ld a,b
-        rrca
-        rrca
-        ld h,a
-        ld l,0
         ifdef WIN320_TEST_BUILD
         ld hl,win_test_font_memory
         endif
@@ -502,7 +420,7 @@ build_config:
         ld (config_buffer+10),a
         ld a,FONT320_HEIGHT
         ld (config_buffer+11),a
-        ld hl,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
+        ld hl,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR|WIN_CAP_CHECKBOX|WIN_CAP_RADIOBUTTON
         ld (config_buffer+12),hl
         ld a,(font_page)
         ld (config_buffer+14),a
@@ -741,52 +659,22 @@ load_validation_tables:
         jp unmap_font_page
 
 map_font_page:
-        ld a,i
-        jp po,.interrupts_off
-        ld a,1
-        jr .save_iff
-.interrupts_off:
-        xor a
-.save_iff:
-        ld (saved_iff),a
-        di
-        call read_work_page
+        call s1_save_iff
+        ld a,(work_page_port)
+        ld c,a
+        call s1_read_page_c
         ld (saved_work_page),a
         ld a,(font_page)
-        jp write_work_page
+        jp s1_write_page_c
 
 unmap_font_page:
         ld a,#c0
         out (YPORT),a
+        ld a,(work_page_port)
+        ld c,a
         ld a,(saved_work_page)
-        call write_work_page
-        ld a,(saved_iff)
-        or a
-        ret z
-        ei
-        ret
-
-read_work_page:
-        ld a,(work_page_port)
-        ld c,a
-        ifdef WIN320_TEST_BUILD
-        jp win_test_read_page
-        else
-        in a,(c)
-        ret
-        endif
-
-write_work_page:
-        ld b,a
-        ld a,(work_page_port)
-        ld c,a
-        ld a,b
-        ifdef WIN320_TEST_BUILD
-        jp win_test_write_page
-        else
-        out (c),a
-        ret
-        endif
+        call s1_write_page_c
+        jp s1_restore_iff
 
 release_font_page:
         ld a,(font_block)
@@ -853,14 +741,13 @@ win_halt_call:
 ; ---- runtime state ---------------------------------------------------------
 
 code_window:            db #ff
-stack_window:           db #ff
+stack_window            equ path_scratch+138
 data_window:            db #ff
 vram_window:            db #ff
-work_window:            db #ff
 work_page_port:         db PAGE_PORT0
 work_base:              dw 0
-saved_work_page:        db 0
-saved_iff:              db 0
+saved_work_page         equ saved_data_page
+saved_iff               equ s1_saved_iff
 screen_id:              db 0
 origin_x:               dw 0
 origin_y:               db 0
@@ -870,18 +757,18 @@ backstore_depth:        db 0
 font_block:             db #ff
 font_page:              db #ff
 font_data_size:         dw 0
-init_handle:            db 0
-payload_remaining:      dw 0
-copy_offset:            dw 0
-copy_count:             db 0
-validation_index:       db 0
-expected_offset:        dw 0
-config_dest:            dw 0
-config_count:           db 0
 ; Configuration and payload I/O are non-reentrant with path/edit handling.
-; Reuse path_scratch instead of reserving another 148 bytes in the L0 image.
+; Reuse path_scratch for both their buffers and scalar state.
 config_buffer           equ path_scratch
 io_scratch              equ path_scratch
+init_handle             equ path_scratch+175
+payload_remaining       equ path_scratch+176
+copy_offset             equ path_scratch+178
+copy_count              equ path_scratch+180
+validation_index        equ path_scratch+181
+expected_offset         equ path_scratch+182
+config_dest             equ path_scratch+184
+config_count            equ path_scratch+186
         ifndef WIN320_TEST_BUILD
         assert $-win_image_base <= S5_OVERLAY_OFFSET
         if $-win_image_base < S5_OVERLAY_OFFSET

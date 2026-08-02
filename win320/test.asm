@@ -67,11 +67,11 @@ start:
         cp 1
         jp nz,self_failed
         ld a,e
-        or a
+        cp 1
         jp nz,self_failed
         push ix
         pop hl
-        ld de,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
+        ld de,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR|WIN_CAP_CHECKBOX|WIN_CAP_RADIOBUTTON
         or a
         sbc hl,de
         jp nz,self_failed
@@ -171,6 +171,11 @@ start:
         ld a,7
         ld (test_stage),a
         call run_stage5_showcase
+        jp nz,api_failed
+
+        ld a,8
+        ld (test_stage),a
+        call run_stage6_showcase
         jp nz,api_failed
 
 success:
@@ -372,7 +377,7 @@ run_stage3_dialog:
 
 run_stage4_dialogs:
         ; Screen 0: edit remains modal while it owns focus. Tab hands control
-        ; to win_track so Enter/Space really animate and activate the button;
+        ; to win_track so Enter really animates and activates the button;
         ; another Tab returns to the field without requiring a mouse.
         xor a
         call select_target_screen
@@ -792,6 +797,9 @@ stage5_interact:
         ld a,(stage5_track+WIN_TRK_KEY_ASCII)
         cp #1b
         jp z,.done
+        ld a,(stage5_window+WIN_WND_FOCUS)
+        cp 1                         ; keyboard navigation belongs to listbox
+        jp nz,.track
         ld a,(stage5_track+WIN_TRK_KEY_SCAN)
         and #7f
         cp #58                       ; Up
@@ -881,6 +889,132 @@ stage5_interact:
         jp .track
 .done:
         xor a
+        ret
+
+; Separate ABI-1.1 screen. WIN320 owns choice state, group selection, focus,
+; cursor-safe redraw and CHANGE publication; the application updates only the
+; compact state label after each real change.
+run_stage6_showcase:
+        xor a
+        call select_target_screen
+        ret nz
+        ld e,WIN_TXT_ASCIIZ
+        ld b,WIN_SET_TEXT_FORMAT
+        call call_api
+        ret nz
+        ld de,0
+        ld b,WIN_SET_THEME
+        call call_api
+        ret nz
+        ld d,#ff
+        ld e,WIN_STYLE_CLEAR
+        ld b,WIN_STYLE
+        call call_api
+        ret nz
+
+        xor a
+        ld (stage6_checkbox+WIN_CH_FLAGS),a
+        ld a,WIN_CH_DISABLED
+        ld (stage6_checkbox_disabled+WIN_CH_FLAGS),a
+        ld a,WIN_CH_CHECKED
+        ld (stage6_radio_audio_a+WIN_CH_FLAGS),a
+        ld (stage6_radio_view_a+WIN_CH_FLAGS),a
+        xor a
+        ld (stage6_radio_audio_b+WIN_CH_FLAGS),a
+        ld (stage6_radio_view_b+WIN_CH_FLAGS),a
+        ld a,1
+        ld (stage6_window+WIN_WND_FOCUS),a
+        ld a,#ff
+        ld (stage6_window+WIN_WND_LAST_FOCUS),a
+        call stage6_write_status
+        ld de,stage6_window
+        ld b,WIN_DRAW
+        call call_api
+        ret nz
+        xor a
+        call show_screen
+
+        ld hl,stage6_track+WIN_TRK_STATE
+        ld b,WIN_TRACK_SIZE-WIN_TRK_STATE
+        xor a
+.clear_state:
+        ld (hl),a
+        inc hl
+        djnz .clear_state
+        ld c,0                       ; application-side Mouse INIT
+        rst #30
+        ld e,0
+        ld b,WIN_SET_CURSOR
+        call call_api
+        ret nz
+        ld hl,160
+        ld de,128
+        ld c,4
+        rst #30
+        ld c,1
+        rst #30
+        ld b,WIN_WAIT_RELEASE
+        call call_api
+        ret nz
+        ld c,2                       ; win_track owns SHOW/HIDE
+        rst #30
+.track:
+        ld de,stage6_track
+        ld b,WIN_TRACK
+        call call_api
+        ret nz
+        ld a,(stage6_track+WIN_TRK_EVENT)
+        cp WIN_EV_CHANGE
+        jr z,.changed
+        cp WIN_EV_LCLICK
+        jr nz,.key
+        ld a,(stage6_track+WIN_TRK_ID)
+        cp 87
+        jr z,.done
+        jr .track
+.key:
+        ld a,(stage6_track+WIN_TRK_EVENT)
+        cp WIN_EV_KEY
+        jr nz,.track
+        ld a,(stage6_track+WIN_TRK_KEY_ASCII)
+        cp #1b
+        jr z,.done
+        jr .track
+.changed:
+        call stage6_write_status
+        ld a,WIN_IT_DIRTY
+        ld (stage6_items+7*WIN_ITEM_SIZE+WIN_ITEM_FLAGS),a
+        ld de,stage6_window
+        ld b,WIN_UPDATE
+        call call_api
+        ret nz
+        jr .track
+.done:
+        xor a
+        ret
+
+stage6_write_status:
+        ld a,'0'
+        ld hl,stage6_checkbox+WIN_CH_FLAGS
+        bit 0,(hl)
+        jr z,.checkbox
+        inc a
+.checkbox:
+        ld (str_stage6_status+6),a
+        ld a,'A'
+        ld hl,stage6_radio_audio_b+WIN_CH_FLAGS
+        bit 0,(hl)
+        jr z,.audio
+        inc a
+.audio:
+        ld (str_stage6_status+15),a
+        ld a,'1'
+        ld hl,stage6_radio_view_b+WIN_CH_FLAGS
+        bit 0,(hl)
+        jr z,.view
+        inc a
+.view:
+        ld (str_stage6_status+23),a
         ret
 
 ; Load the two payload pages of ICONS.WIP into application-owned EMM.
@@ -1549,6 +1683,73 @@ stage5_list_items:
         dw str_stage5_04,str_stage5_05,str_stage5_06,str_stage5_07
         dw str_stage5_08,str_stage5_09,str_stage5_10,str_stage5_11
 
+; ---- Stage-6 checkbox/radio showcase ------------------------------------
+
+stage6_window:
+        dw 30,20,260,216
+        db #ff,0,9,0
+        dw stage6_items
+        db #ff,0
+stage6_items:
+        db WIN_T_LABEL,0,#ff,0
+        dw stage6_title,0
+        db WIN_T_CHECKBOX,WIN_IT_HIT|WIN_IT_FOCUSABLE,80,0
+        dw stage6_checkbox,0
+        db WIN_T_CHECKBOX,WIN_IT_HIT|WIN_IT_FOCUSABLE,81,0
+        dw stage6_checkbox_disabled,0
+        db WIN_T_RADIOBUTTON,WIN_IT_HIT|WIN_IT_FOCUSABLE,82,0
+        dw stage6_radio_audio_a,0
+        db WIN_T_RADIOBUTTON,WIN_IT_HIT|WIN_IT_FOCUSABLE,83,0
+        dw stage6_radio_audio_b,0
+        db WIN_T_RADIOBUTTON,WIN_IT_HIT|WIN_IT_FOCUSABLE,84,0
+        dw stage6_radio_view_a,0
+        db WIN_T_RADIOBUTTON,WIN_IT_HIT|WIN_IT_FOCUSABLE,85,0
+        dw stage6_radio_view_b,0
+        db WIN_T_LABEL,0,#ff,0
+        dw stage6_status,0
+        db WIN_T_BUTTON,WIN_IT_HIT|WIN_IT_FOCUSABLE,87,0
+        dw stage6_exit,0
+stage6_title:
+        dw 8,8,244,16
+        db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL|WIN_LABEL_CLIP
+        dw str_stage6_title
+stage6_checkbox:
+        dw 16,32,220,12
+        db #ff,0,0,0
+        dw str_stage6_checkbox
+stage6_checkbox_disabled:
+        dw 16,50,220,12
+        db #ff,WIN_CH_DISABLED,0,0
+        dw str_stage6_disabled
+stage6_radio_audio_a:
+        dw 16,76,220,12
+        db #ff,WIN_CH_CHECKED,1,0
+        dw str_stage6_audio_a
+stage6_radio_audio_b:
+        dw 16,94,220,12
+        db #ff,0,1,0
+        dw str_stage6_audio_b
+stage6_radio_view_a:
+        dw 16,122,220,12
+        db #ff,WIN_CH_CHECKED,2,0
+        dw str_stage6_view_a
+stage6_radio_view_b:
+        dw 16,140,220,12
+        db #ff,0,2,0
+        dw str_stage6_view_b
+stage6_status:
+        dw 8,166,244,12
+        db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL|WIN_LABEL_CLIP
+        dw str_stage6_status
+stage6_exit:
+        dw 90,184,80,20
+        db #ff,0
+        dw str_stage6_exit
+stage6_track:
+        dw stage6_window,0
+        db 0,WIN_TRK_ANY_KEY|WIN_TRK_OUTSIDE|WIN_TRK_HALT|WIN_TRK_SHOW_CUR|WIN_TRK_TAB_FOCUS
+        ds WIN_TRACK_SIZE-6,0
+
 blue_theme:
         db 15,1,9,3,15,8,0,15
         db 3,15,1,11,1,9,#55,0
@@ -1590,6 +1791,15 @@ str_stage5_08: db "TOOLS",0
 str_stage5_09: db "WIN320.DLL",0
 str_stage5_10: db "WIN320.EXE",0
 str_stage5_11: db "ICONS.WIP",0
+str_stage6_title: db "Stage 6: mouse, Tab, Space and radio arrows",0
+str_stage6_checkbox: db "Enable sound",0
+str_stage6_disabled: db "Disabled checkbox",0
+str_stage6_audio_a: db "Audio A: AY",0
+str_stage6_audio_b: db "Audio B: Beeper",0
+str_stage6_view_a: db "View 1: List",0
+str_stage6_view_b: db "View 2: Icons",0
+str_stage6_status: db "Check=0  Audio=A  View=1",0
+str_stage6_exit: db "Exit",0
 
 pstr_title:      db 39,"WIN320 Stage 4 / screen 1 / Pascal text"
 pstr_long:       db 55,"Alternate theme, centered and clipped Pascal label tail"
@@ -1612,8 +1822,8 @@ icon_pack_expected:
         dw 12
         db 8,2,16,2
 dll_name:        db "WIN320.DLL",0
-msg_banner:      db "WIN320 Stage 5 visual test",13,10,0
-msg_ok:          db "PASS: Stage 5 control sequence.",13,10,0
+msg_banner:      db "WIN320 ABI 1.1 visual test",13,10,0
+msg_ok:          db "PASS: Stage 6 choice sequence.",13,10,0
 msg_failed:      db "FAIL: stage=$",0
 msg_status:      db " status=$",0
 msg_load_failed: db "FAIL: load reason=$",0

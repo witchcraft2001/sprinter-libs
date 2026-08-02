@@ -1,4 +1,4 @@
-; WIN320.DLL public ABI 1.0 constants for sjasmplus clients.
+; WIN320.DLL public ABI 1.1 constants for sjasmplus clients.
 WIN_INIT                 equ 0
 WIN_FREE                 equ 1
 WIN_SET_WORK_WINDOWS     equ 2
@@ -36,7 +36,9 @@ WIN_PROGRESS_DRAW        equ 33
 WIN_SCROLLBAR_INIT       equ 34
 WIN_SCROLLBAR_DRAW       equ 35
 WIN_LISTBOX_DRAW         equ 36
-WIN_ENTRY_COUNT          equ 37
+WIN_CHECKBOX             equ 37
+WIN_RADIOBUTTON          equ 38
+WIN_ENTRY_COUNT          equ 39
 
 WIN_ERR_ARGUMENT         equ #20
 WIN_ERR_VIDEO_MODE       equ #21
@@ -150,6 +152,8 @@ WIN_T_SCROLLBAR          equ 9
 WIN_T_LISTBOX            equ 10
 WIN_T_EDIT               equ 11
 WIN_T_ZONE               equ 12
+WIN_T_CHECKBOX           equ 13
+WIN_T_RADIOBUTTON        equ 14
 
 WIN_IT_DIRTY             equ #01
 WIN_IT_HIDDEN            equ #02
@@ -213,6 +217,7 @@ WIN_EV_HOVER             equ 6
 WIN_EV_LEAVE             equ 7
 WIN_EV_OUTSIDE           equ 8
 WIN_EV_FOCUS             equ 9
+WIN_EV_CHANGE            equ 10
 
 WIN_REPEAT_DELAY         equ 12
 WIN_REPEAT_RATE          equ 3
@@ -239,6 +244,21 @@ WIN_ED_ENTER             equ 0
 WIN_ED_ESC               equ 1
 WIN_ED_TAB               equ 2
 WIN_ED_MOUSE             equ 3
+
+; WinChoice (14 bytes), shared by checkbox and radio button.
+WIN_CHOICE_SIZE          equ 14
+WIN_CH_X                 equ 0
+WIN_CH_Y                 equ 2
+WIN_CH_WIDTH             equ 4
+WIN_CH_HEIGHT            equ 6
+WIN_CH_ATTR               equ 8
+WIN_CH_FLAGS              equ 9
+WIN_CH_GROUP              equ 10
+WIN_CH_RESERVED           equ 11
+WIN_CH_TEXT               equ 12
+WIN_CH_CHECKED            equ #01
+WIN_CH_FOCUS              equ #02
+WIN_CH_DISABLED           equ #04
 
 ; WinIcon (12 bytes).
 WIN_ICON_SIZE            equ 12
@@ -332,6 +352,8 @@ WIN_CAP_PROGRESS         equ #0010
 WIN_CAP_ICON             equ #0020
 WIN_CAP_FOCUS            equ #0040
 WIN_CAP_PASCAL_STR       equ #0080
+WIN_CAP_CHECKBOX         equ #0100
+WIN_CAP_RADIOBUTTON      equ #0200
 
 WIN_CONFIG_SIZE          equ 20
 WIN_CFG_STRUCT_SIZE      equ 0

@@ -4,40 +4,40 @@
 s5_control_ptr          equ path_scratch+140
 s5_progress_scratch     equ path_scratch+142
 s5_new_px               equ path_scratch+154
-s5_inner_x              equ path_scratch+158
-s5_inner_y              equ path_scratch+160
-s5_inner_w              equ path_scratch+162
-s5_inner_h              equ path_scratch+164
-s5_result               equ path_scratch+166
+s5_inner_x              equ path_scratch+156
+s5_inner_y              equ path_scratch+158
+s5_inner_w              equ path_scratch+160
+s5_inner_h              equ path_scratch+162
+s5_result               equ path_scratch+183
 s5_icon_scratch         equ s5_progress_scratch
-s5_icon_source          equ path_scratch+168
-s5_icon_dest            equ path_scratch+170
-s5_icon_y               equ path_scratch+172
-s5_icon_rows            equ path_scratch+173
+s5_icon_source          equ path_scratch+154
+s5_icon_dest            equ path_scratch+156
+s5_icon_y               equ path_scratch+158
+s5_icon_rows            equ path_scratch+159
 s5_scroll_scratch       equ s5_progress_scratch
-s5_track_x              equ path_scratch+174
-s5_track_y              equ path_scratch+176
-s5_track_w              equ path_scratch+178
-s5_track_h              equ path_scratch+180
-s5_track_len            equ path_scratch+182
-s5_thickness            equ path_scratch+184
-s5_new_pos              equ path_scratch+186
-s5_new_len              equ path_scratch+188
-s5_scale_pixels         equ path_scratch+194
-s5_scale_numerator      equ path_scratch+196
-s5_scale_denominator    equ path_scratch+198
-s5_scroll_edge          equ s5_scale_pixels
+s5_track_x              equ path_scratch+164
+s5_track_y              equ path_scratch+166
+s5_track_w              equ path_scratch+168
+s5_track_h              equ path_scratch+170
+s5_track_len            equ path_scratch+172
+s5_thickness            equ path_scratch+174
+s5_new_pos              equ path_scratch+176
+s5_new_len              equ path_scratch+178
+s5_scale_pixels         equ path_scratch+180
+s5_scale_numerator      equ path_scratch+182
+s5_scale_denominator    equ path_scratch+184
+s5_scroll_edge          equ path_scratch+187
 s5_list_scratch         equ s5_progress_scratch
-s5_content_x            equ s5_track_x
-s5_content_y            equ s5_track_y
-s5_content_w            equ s5_track_w
-s5_content_h            equ s5_track_h
-s5_visible              equ path_scratch+200
-s5_row_index            equ path_scratch+202
-s5_row_y                equ path_scratch+204
-s5_row_attr              equ path_scratch+206
-s5_text_page             equ path_scratch+207
-s5_text_offset           equ path_scratch+208
+s5_content_x            equ path_scratch+170
+s5_content_y            equ path_scratch+172
+s5_content_w            equ path_scratch+174
+s5_content_h            equ path_scratch+176
+s5_visible              equ path_scratch+178
+s5_row_index            equ path_scratch+179
+s5_row_y                equ path_scratch+181
+s5_row_attr              equ path_scratch+183
+s5_text_page             equ path_scratch+184
+s5_text_offset           equ path_scratch+185
 
 ; ---- progress bar ---------------------------------------------------------
 
@@ -130,37 +130,24 @@ s5_load_progress:
         or l
         jp z,s5_bad
         ld hl,(s5_progress_scratch+WIN_PG_HEIGHT)
-        ld de,3
-        or a
-        sbc hl,de
-        jp c,s5_bad
+        ld de,-3
+        add hl,de
+        jp nc,s5_bad
         ld a,(s5_progress_scratch+WIN_PG_FLAGS)
         and WIN_PG_FRAME
         jr z,.geometry
         ld hl,(s5_progress_scratch+WIN_PG_WIDTH)
-        ld de,3
-        or a
-        sbc hl,de
-        jp c,s5_bad
+        ld de,-3
+        add hl,de
+        jp nc,s5_bad
 .geometry:
-        ld hl,(s5_progress_scratch+WIN_PG_X)
-        ld (rect_scratch+WIN_RC_X),hl
-        ld hl,(s5_progress_scratch+WIN_PG_Y)
-        ld (rect_scratch+WIN_RC_Y),hl
-        ld hl,(s5_progress_scratch+WIN_PG_WIDTH)
-        ld (rect_scratch+WIN_RC_WIDTH),hl
-        ld hl,(s5_progress_scratch+WIN_PG_HEIGHT)
-        ld (rect_scratch+WIN_RC_HEIGHT),hl
-        call s1_load_rect_internal
+        ld hl,s5_progress_scratch
+        call s1_load_control_rect
         ret nz
-        ld hl,(rect_x)
-        ld (s5_inner_x),hl
-        ld hl,(rect_y)
-        ld (s5_inner_y),hl
-        ld hl,(rect_w)
-        ld (s5_inner_w),hl
-        ld hl,(rect_h)
-        ld (s5_inner_h),hl
+        ld hl,rect_x
+        ld de,s5_inner_x
+        ld bc,8
+        ldir
         ld a,(s5_progress_scratch+WIN_PG_FLAGS)
         and WIN_PG_FRAME
         ret z
@@ -194,24 +181,16 @@ s5_progress_boundary:
         jp s5_scale_ratio
 
 s5_set_inner_fill:
-        ld hl,(s5_inner_x)
-        ld (fill_x),hl
-        ld hl,(s5_inner_y)
-        ld (fill_y),hl
-        ld hl,(s5_inner_w)
-        ld (fill_w),hl
-        ld hl,(s5_inner_h)
-        ld (fill_h),hl
+        ld hl,s5_inner_x
+        ld de,fill_x
+        ld bc,8
+        ldir
         ret
 
 s5_unsupported:
-        ld a,WIN_ERR_UNSUPPORTED
-        or a
-        ret
+        jp win_reserved
 s5_bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 ; ---- icon -----------------------------------------------------------------
 
@@ -244,14 +223,8 @@ win_icon:
         or a
         sbc hl,de
         jp nz,s5_bad
-        ld hl,(s5_icon_scratch+WIN_ICO_X)
-        ld (rect_scratch+WIN_RC_X),hl
-        ld hl,(s5_icon_scratch+WIN_ICO_Y)
-        ld (rect_scratch+WIN_RC_Y),hl
-        ld hl,(s5_icon_scratch+WIN_ICO_WIDTH)
-        ld (rect_scratch+WIN_RC_WIDTH),hl
-        ld (rect_scratch+WIN_RC_HEIGHT),hl
-        call s1_load_rect_internal
+        ld hl,s5_icon_scratch
+        call s1_load_control_rect
         jr nz,.done
         call s1_resolve_pair
         jr nz,.done
@@ -426,15 +399,8 @@ s5_load_scrollbar:
         sbc hl,de
         jp c,s5_bad
 .state_ok:
-        ld hl,(s5_scroll_scratch+WIN_SB_X)
-        ld (rect_scratch+WIN_RC_X),hl
-        ld hl,(s5_scroll_scratch+WIN_SB_Y)
-        ld (rect_scratch+WIN_RC_Y),hl
-        ld hl,(s5_scroll_scratch+WIN_SB_WIDTH)
-        ld (rect_scratch+WIN_RC_WIDTH),hl
-        ld hl,(s5_scroll_scratch+WIN_SB_HEIGHT)
-        ld (rect_scratch+WIN_RC_HEIGHT),hl
-        call s1_load_rect_internal
+        ld hl,s5_scroll_scratch
+        call s1_load_control_rect
         ret nz
         ld a,(rect_empty)
         or a
@@ -450,10 +416,9 @@ s5_load_scrollbar:
         ex de,hl
         ld (s5_track_len),hl
         ld hl,(s5_thickness)
-        ld de,6
-        or a
-        sbc hl,de
-        jp c,s5_bad
+        ld de,-6
+        add hl,de
+        jp nc,s5_bad
         ld a,(s5_scroll_scratch+WIN_SB_FLAGS)
         and WIN_SB_ARROWS
         jr z,.ready
@@ -474,14 +439,10 @@ s5_load_scrollbar:
 
 ; Derive track rectangle plus current thumb position/length.
 s5_scrollbar_geometry:
-        ld hl,(rect_x)
-        ld (s5_track_x),hl
-        ld hl,(rect_y)
-        ld (s5_track_y),hl
-        ld hl,(rect_w)
-        ld (s5_track_w),hl
-        ld hl,(rect_h)
-        ld (s5_track_h),hl
+        ld hl,rect_x
+        ld de,s5_track_x
+        ld bc,8
+        ldir
         ld a,(s5_scroll_scratch+WIN_SB_FLAGS)
         bit 1,a
         jr z,.scale
@@ -649,18 +610,14 @@ s5_raised_fill_mapped:
         jp s1_panel_mapped
 
 s5_set_track_fill:
-        ld hl,(s5_track_x)
-        ld (fill_x),hl
-        ld (rect_x),hl
-        ld hl,(s5_track_y)
-        ld (fill_y),hl
-        ld (rect_y),hl
-        ld hl,(s5_track_w)
-        ld (fill_w),hl
-        ld (rect_w),hl
-        ld hl,(s5_track_h)
-        ld (fill_h),hl
-        ld (rect_h),hl
+        ld hl,s5_track_x
+        ld de,fill_x
+        ld bc,8
+        ldir
+        ld hl,fill_x
+        ld de,rect_x
+        ld bc,8
+        ldir
         ret
 
 ; HL=position, DE=length; update fill rectangle for current orientation.
@@ -692,20 +649,13 @@ s5_publish_scrollbar:
         ld hl,(s5_control_ptr)
         ld de,WIN_SB_THUMB_POS
         add hl,de
-        ld de,(s5_new_pos)
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        inc hl
-        ld de,(s5_new_len)
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        inc hl
-        ld de,(s5_new_pos)
-        ld (hl),e
-        inc hl
-        ld (hl),d
+        ex de,hl
+        ld hl,s5_new_pos
+        ld bc,4
+        ldir
+        ld hl,s5_new_pos
+        ldi
+        ldi
         xor a
         ret
 
@@ -915,6 +865,8 @@ s5_load_listbox:
         ld a,(s4_focus_sync_valid)
         or a
         jr z,.focus_ready
+        xor a
+        ld (s4_focus_sync_valid),a
         ld a,(s5_list_scratch+WIN_LB_FLAGS)
         ld b,a
         ld a,(s4_focus_sync_value)
@@ -937,40 +889,27 @@ s5_load_listbox:
         ld a,(s5_list_scratch+WIN_LB_ITEM_HEIGHT)
         cp 8
         jp c,s5_bad
-        ld hl,(s5_list_scratch+WIN_LB_X)
-        ld (rect_scratch+WIN_RC_X),hl
-        ld hl,(s5_list_scratch+WIN_LB_Y)
-        ld (rect_scratch+WIN_RC_Y),hl
-        ld hl,(s5_list_scratch+WIN_LB_WIDTH)
-        ld (rect_scratch+WIN_RC_WIDTH),hl
-        ld hl,(s5_list_scratch+WIN_LB_HEIGHT)
-        ld (rect_scratch+WIN_RC_HEIGHT),hl
-        call s1_load_rect_internal
+        ld hl,s5_list_scratch
+        call s1_load_control_rect
         ret nz
         ld a,(rect_empty)
         or a
         jp nz,s5_bad
-        ld hl,(rect_x)
-        ld (s5_content_x),hl
-        ld hl,(rect_y)
-        ld (s5_content_y),hl
-        ld hl,(rect_w)
-        ld (s5_content_w),hl
-        ld hl,(rect_h)
-        ld (s5_content_h),hl
+        ld hl,rect_x
+        ld de,s5_content_x
+        ld bc,8
+        ldir
         ld a,(s5_list_scratch+WIN_LB_FLAGS)
         and WIN_LB_FRAME
         jr z,.content
         ld hl,(s5_content_w)
-        ld de,5
-        or a
-        sbc hl,de
-        jp c,s5_bad
+        ld de,-5
+        add hl,de
+        jp nc,s5_bad
         ld hl,(s5_content_h)
-        ld de,5
-        or a
-        sbc hl,de
-        jp c,s5_bad
+        ld de,-5
+        add hl,de
+        jp nc,s5_bad
         ld hl,(s5_content_x)
         inc hl
         inc hl
@@ -995,6 +934,7 @@ s5_load_listbox:
         ld hl,(s5_content_h)
         ld a,(s5_list_scratch+WIN_LB_ITEM_HEIGHT)
         ld e,a
+        ld d,0
         xor a
 .divide:
         inc a
@@ -1096,15 +1036,10 @@ s5_sync_list_scrollbar:
         inc hl
         ld (hl),0
         inc hl
-        ld de,(s5_list_scratch+WIN_LB_TOTAL)
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        inc hl
-        ld de,(s5_list_scratch+WIN_LB_FIRST)
-        ld (hl),e
-        inc hl
-        ld (hl),d
+        ex de,hl
+        ld hl,s5_list_scratch+WIN_LB_TOTAL
+        ld bc,4
+        ldir
         xor a
         ret
 .bad:
@@ -1131,12 +1066,10 @@ s5_listbox_background:
         ; tail below the last whole row gray.
         jr .unmap
 .content:
-        ld hl,(s5_content_x)
-        ld (fill_x),hl
-        ld hl,(s5_content_y)
-        ld (fill_y),hl
-        ld hl,(s5_content_w)
-        ld (fill_w),hl
+        ld hl,s5_content_x
+        ld de,fill_x
+        ld bc,6
+        ldir
         ld hl,(rect_h)
         ld (fill_h),hl
         call s1_fill_mapped
@@ -1310,9 +1243,7 @@ s5_listbox_copy_paged:
 .bad:
         jp s5_bad
 .window:
-        ld a,WIN_ERR_WINDOW
-        or a
-        ret
+        jp win_error_window
 
 s5_map_work_page:
         ld a,(s5_list_scratch+WIN_LB_ITEMS_PAGE)
@@ -1483,3 +1414,5 @@ s5_hit_detail:
 .part:
         ld (s3_track_scratch+WIN_TRK_PART),a
         ret
+
+        include "stage6.inc"

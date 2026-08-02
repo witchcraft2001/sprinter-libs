@@ -1,8 +1,8 @@
-WIN320_STAGE5_TEST equ 1
+        define WIN320_STAGE5_TEST
         include "t_stage4.asm"
 
-T_S5_RESULT equ path_scratch+166
-T_S5_CONTENT_H equ path_scratch+180
+T_S5_RESULT equ path_scratch+183
+T_S5_CONTENT_H equ path_scratch+176
 
 test_stage5:
         ld de,s5_progress

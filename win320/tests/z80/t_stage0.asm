@@ -243,7 +243,7 @@ start:
         ld a,16
         call t_expect_z
         ld a,e
-        or a
+        cp 1
         ld a,17
         call t_expect_z
 
@@ -415,8 +415,16 @@ test_auto_window_pairs:
         inc a
         jr .expected
 .compare:
-        ld a,(work_window)
-        cp b
+        ld a,b
+        add a,a
+        add a,a
+        add a,a
+        add a,a
+        add a,a
+        add a,PAGE_PORT0
+        ld c,a
+        ld a,(work_page_port)
+        cp c
         jr z,.next_pair
 .failed:
         ld a,1

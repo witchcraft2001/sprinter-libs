@@ -98,19 +98,12 @@ s4_load_edit:
         sbc hl,de
         jp c,.bad
 .geometry:
-        ld hl,(s4_edit_scratch+WIN_ED_X)
-        ld (rect_scratch+WIN_RC_X),hl
-        ld hl,(s4_edit_scratch+WIN_ED_Y)
-        ld (rect_scratch+WIN_RC_Y),hl
-        ld hl,(s4_edit_scratch+WIN_ED_WIDTH)
-        ld (rect_scratch+WIN_RC_WIDTH),hl
-        ld hl,(s4_edit_scratch+WIN_ED_HEIGHT)
-        ld (rect_scratch+WIN_RC_HEIGHT),hl
+        ld hl,s4_edit_scratch
         xor a
         ld (rect_scratch+WIN_RC_FLAGS),a
         ld a,#ff
         ld (rect_scratch+WIN_RC_COLOR),a
-        call s1_load_rect_internal
+        call s1_load_control_rect
         ret nz
         ld hl,(rect_x)
         ld (s4_content_x),hl
@@ -172,13 +165,9 @@ s4_load_edit:
         xor a
         ret
 .unsupported:
-        ld a,WIN_ERR_UNSUPPORTED
-        or a
-        ret
+        jp win_reserved
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 ; Recompute s4_len and s4_data_ptr from the selected public string format.
 s4_recount_buffer:
@@ -214,9 +203,7 @@ s4_recount_buffer:
         xor a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 ; Keep the cursor cell visible when possible, but never render a partial glyph.
 s4_update_scroll:
@@ -340,9 +327,7 @@ s4_prepare_edit_render:
         ld (s4_background_color),a
         jp s1_resolve_pair
 .font:
-        ld a,WIN_ERR_FONT
-        or a
-        ret
+        jp win_error_font
 
 s4_render_edit_content_mapped:
         ld a,(s4_draw_index)
@@ -554,16 +539,14 @@ s4_validate_window_focus:
         call s2_load_item_index
         call s2_validate_item
         ret nz
-        ld a,(item_scratch+WIN_ITEM_FLAGS)
-        and WIN_IT_HIDDEN|WIN_IT_DISABLED|WIN_IT_FOCUSABLE
-        cp WIN_IT_FOCUSABLE
+        call s6_validate_choice_item
+        ret nz
+        call s4_item_focusable
         jr nz,.bad
         xor a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 ; Synchronize the derived focus flag of the current built-in control.
 s4_sync_item_focus:
@@ -574,11 +557,7 @@ s4_sync_item_focus:
         jr nz,s4_clear_hidden_focus
 .visible:
         ld a,(item_scratch+WIN_ITEM_TYPE)
-        cp WIN_T_BUTTON
-        jr z,s4_sync_builtin
-        cp WIN_T_LISTBOX
-        jr z,s4_sync_builtin
-        cp WIN_T_EDIT
+        call s4_is_focus_visual
         jr z,s4_sync_builtin
         xor a
         ret
@@ -590,6 +569,10 @@ s4_clear_hidden_focus:
         ld a,(item_scratch+WIN_ITEM_TYPE)
         cp WIN_T_BUTTON
         jr z,.button
+        cp WIN_T_CHECKBOX
+        jr z,.choice
+        cp WIN_T_RADIOBUTTON
+        jr z,.choice
         cp WIN_T_EDIT
         jr nz,.other
         ld bc,WIN_EDIT_SIZE
@@ -598,6 +581,10 @@ s4_clear_hidden_focus:
 .button:
         ld bc,WIN_BUTTON_SIZE
         ld hl,button_scratch
+        jr .copy
+.choice:
+        ld bc,WIN_CHOICE_SIZE
+        ld hl,s4_edit_scratch
 .copy:
         ld de,(item_scratch+WIN_ITEM_CONTROL)
         call s1_copy_caller_block
@@ -634,6 +621,8 @@ s4_apply_focus_scratch:
         or a
         ret z
         ld b,(hl)
+        xor a
+        ld (s4_focus_sync_valid),a
         ld a,(s4_focus_sync_value)
         or a
         jr z,.clear
@@ -708,17 +697,13 @@ s4_item_needs_focus_redraw:
         jr z,.yes
         ld b,a
         ld a,(window_scratch+WIN_WND_LAST_FOCUS)
-        cp b
+        xor b                         ; mismatch must return with CF clear
         ret nz
 .yes:
         ld a,(s2_current_index)
         call s2_load_item_index
         ld a,(item_scratch+WIN_ITEM_TYPE)
-        cp WIN_T_BUTTON
-        jr z,.visual
-        cp WIN_T_LISTBOX
-        jr z,.visual
-        cp WIN_T_EDIT
+        call s4_is_focus_visual
         jr z,.visual
         or a
         ret
@@ -749,17 +734,28 @@ s4_keyboard_focus:
 .activate:
         cp #0d
         jr z,.button
-        cp #20
-        jr z,.button
-        or a                            ; not consumed: always return CF=0
+        call s6_choice_key
+        ret nc
+        cp WIN_EV_CHANGE
+        jr z,.choice_changed
+        or a
+        jr z,.activated
+        ld (s3_runtime_error),a
+        jr .activated
+.choice_changed:
+        ld a,WIN_EV_CHANGE
+        call s3_emit_index
+.activated:
+        scf
         ret
+        ; Enter remains the button activation key.
 .button:
         call s4_activate_focused_button
         ret nc
         or a
-        jr z,.activated
+        jr z,.button_activated
         ld (s3_runtime_error),a
-.activated:
+.button_activated:
         scf
         ret
 
@@ -803,10 +799,11 @@ s4_tab_focus:
 .scan:
         ld a,(s4_focus_candidate)
         call s2_load_item_index
-        ld a,(item_scratch+WIN_ITEM_FLAGS)
-        and WIN_IT_HIDDEN|WIN_IT_DISABLED|WIN_IT_FOCUSABLE
-        cp WIN_IT_FOCUSABLE
+        call s4_item_focusable
+        jr nz,.not_found
+        call s6_tab_accept
         jr z,.found
+.not_found:
         ld a,(s3_track_scratch+WIN_TRK_KEY_MODS)
         and #c0
         jr nz,.previous
@@ -859,9 +856,7 @@ s4_tab_focus:
 s4_focus_click:
         ld a,(s3_event_index)
         call s2_load_item_index
-        ld a,(item_scratch+WIN_ITEM_FLAGS)
-        and WIN_IT_HIDDEN|WIN_IT_DISABLED|WIN_IT_FOCUSABLE
-        cp WIN_IT_FOCUSABLE
+        call s4_item_focusable
         jr z,.eligible
         xor a
         ret
@@ -880,10 +875,25 @@ s4_focus_click:
 ; A=new focus. Redraw old/new derived indicators, then publish both fields.
 s4_apply_focus:
         ld (s4_focus_candidate),a
-        ld a,(window_scratch+WIN_WND_FOCUS)
-        ld (s4_old_focus),a
         call s4_cursor_hide
         ret nz
+        ld a,(s4_focus_candidate)
+        call s4_apply_focus_hidden
+        ld (s4_result),a
+        call s4_cursor_show
+        ld b,a
+        ld a,(s4_result)
+        or a
+        ret nz
+        ld a,b
+        or a
+        ret
+
+; A=new focus, with cursor visibility already owned by the caller.
+s4_apply_focus_hidden:
+        ld (s4_focus_candidate),a
+        ld a,(window_scratch+WIN_WND_FOCUS)
+        ld (s4_old_focus),a
         ld a,(s4_focus_candidate)
         ld (window_scratch+WIN_WND_FOCUS),a
         call s2_set_window_origin
@@ -904,8 +914,6 @@ s4_apply_focus:
         inc hl
         inc hl
         ld (hl),a
-        call s4_cursor_show
-        ret nz
         xor a
         ret
 .draw_failed:
@@ -916,7 +924,6 @@ s4_apply_focus:
         ld (window_scratch+WIN_WND_FOCUS),a
         call s4_redraw_focus_index
         call s2_restore_origin
-        call s4_cursor_show
         ld a,(s4_result)
         or a
         ret
@@ -929,17 +936,25 @@ s4_redraw_focus_index:
 .draw:
         call s2_load_item_index
         ld a,(item_scratch+WIN_ITEM_TYPE)
-        cp WIN_T_BUTTON
-        jr z,.visual
-        cp WIN_T_EDIT
-        jr z,.visual
-        cp WIN_T_LISTBOX
+        call s4_is_focus_visual
         jr z,.visual
         xor a
         ret
 .visual:
         ld a,#80                     ; focus-only dispatch marker
         jp s2_process_item_marked
+
+s4_is_focus_visual:
+        cp WIN_T_BUTTON
+        ret z
+        cp WIN_T_EDIT
+        ret z
+        cp WIN_T_LISTBOX
+        ret z
+        cp WIN_T_CHECKBOX
+        ret z
+        cp WIN_T_RADIOBUTTON
+        ret
 
 s4_cursor_hide:
         xor a
@@ -955,9 +970,7 @@ s4_cursor_hide:
         xor a
         ret
 .unsupported:
-        ld a,WIN_ERR_UNSUPPORTED
-        or a
-        ret
+        jp win_reserved
 
 s4_cursor_show:
         ld a,(s4_cursor_hidden)
@@ -968,9 +981,7 @@ s4_cursor_show:
         ld c,1
         call win_mouse_call
         ret nc
-        ld a,WIN_ERR_UNSUPPORTED
-        or a
-        ret
+        jp win_reserved
 
 ; C=set when Enter/Space targeted a focused button; A is status.
 s4_activate_focused_button:
@@ -979,9 +990,7 @@ s4_activate_focused_button:
         jr z,.no
         ld (s4_focus_candidate),a
         call s2_load_item_index
-        ld a,(item_scratch+WIN_ITEM_FLAGS)
-        and WIN_IT_HIDDEN|WIN_IT_DISABLED|WIN_IT_FOCUSABLE
-        cp WIN_IT_FOCUSABLE
+        call s4_item_focusable
         jr nz,.no
         ld a,(item_scratch+WIN_ITEM_TYPE)
         cp WIN_T_BUTTON
@@ -1010,6 +1019,17 @@ s4_activate_focused_button:
         ret
 .no:
         xor a
+        ret
+
+; Z iff the current item participates in focus, including descriptor-level
+; disabled state for ABI 1.1 choices.
+s4_item_focusable:
+        ld a,(item_scratch+WIN_ITEM_FLAGS)
+        and WIN_IT_HIDDEN|WIN_IT_DISABLED|WIN_IT_FOCUSABLE
+        cp WIN_IT_FOCUSABLE
+        ret nz
+        call s6_choice_enabled
+        or a
         ret
 
 ; A=item index, B=pressed. Draw first, then publish the derived button flags.

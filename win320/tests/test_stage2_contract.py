@@ -79,11 +79,14 @@ class Stage2ContractTests(unittest.TestCase):
         self.assertIn("call s4_validate_window_focus", header)
         self.assertIn("s2_window_ptr", header)
         self.assertIn("WIN_IT_FOCUSABLE", item)
-        self.assertIn("cp WIN_T_ZONE+1", item)
+        self.assertIn("cp WIN_T_RADIOBUTTON+1", item)
         dispatch = STAGE2.split(".dispatch:", 1)[1].split(
             "s2_process_label:", 1
         )[0]
-        for control in ("WIN_T_ICON", "WIN_T_PROGRESS", "WIN_T_SCROLLBAR", "WIN_T_LISTBOX"):
+        for control in (
+            "WIN_T_ICON", "WIN_T_PROGRESS", "WIN_T_SCROLLBAR", "WIN_T_LISTBOX",
+            "WIN_T_CHECKBOX", "WIN_T_RADIOBUTTON",
+        ):
             self.assertIn(control, dispatch)
 
     def test_backstore_row_has_one_mapping_and_256_plus_remainder_copy(self) -> None:
@@ -168,7 +171,11 @@ class Stage2ContractTests(unittest.TestCase):
         self.assertIn("text_pixel_width", preflight)
         self.assertIn("text_x", preflight)
         self.assertIn("text_y", preflight)
-        self.assertIn("call s2_restore_origin", preflight)
+        aggregate = STAGE2.split("s2_win_open:", 1)[1].split(
+            "s2_open_copy:", 1
+        )[0]
+        self.assertIn("call s2_set_window_origin", aggregate)
+        self.assertIn("call s2_restore_origin", aggregate)
         self.assertIn("s1_label_prepare_loaded:", STAGE1)
 
     def test_free_cleanup_forces_auto_work_windows(self) -> None:

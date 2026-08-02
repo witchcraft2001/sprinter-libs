@@ -104,9 +104,7 @@ s2_win_draw_item:
         or a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 win_update:
         push bc
@@ -189,52 +187,26 @@ s2_load_window:
         ld a,(window_scratch+WIN_WND_RESERVED)
         or a
         jp nz,.bad
-        ld hl,(window_scratch+WIN_WND_X)
-        ld de,320
-        or a
-        sbc hl,de
-        jr nc,.bad
-        ld hl,(window_scratch+WIN_WND_WIDTH)
-        ld a,h
-        or l
-        jr z,.bad
-        ld de,321
-        or a
-        sbc hl,de
-        jr nc,.bad
-        ld hl,(window_scratch+WIN_WND_X)
-        ld de,(window_scratch+WIN_WND_WIDTH)
-        add hl,de
-        jr c,.bad
-        ld de,321
-        or a
-        sbc hl,de
-        jr nc,.bad
-
-        ld hl,(window_scratch+WIN_WND_Y)
-        ld a,h
+        ; WinWindow and WinRect share the first eight bytes. Reuse the exact
+        ; non-wrapping screen validator with a temporary zero origin.
+        ld hl,(origin_x)
+        ld (s2_saved_origin_x),hl
+        ld a,(origin_y)
+        ld (s2_saved_origin_y),a
+        xor a
+        ld (origin_x),a
+        ld (origin_x+1),a
+        ld (origin_y),a
+        ld hl,window_scratch
+        call s1_load_control_rect
+        ld (s2_error),a
+        call s2_restore_origin
+        ld a,(s2_error)
         or a
         jr nz,.bad
-        ld de,256
+        ld a,(rect_empty)
         or a
-        sbc hl,de
-        jr nc,.bad
-        ld hl,(window_scratch+WIN_WND_HEIGHT)
-        ld a,h
-        or l
-        jr z,.bad
-        ld de,257
-        or a
-        sbc hl,de
-        jr nc,.bad
-        ld hl,(window_scratch+WIN_WND_Y)
-        ld de,(window_scratch+WIN_WND_HEIGHT)
-        add hl,de
-        jr c,.bad
-        ld de,257
-        or a
-        sbc hl,de
-        jr nc,.bad
+        jr nz,.bad
 
         ld a,(window_scratch+WIN_WND_COUNT)
         or a
@@ -259,13 +231,9 @@ s2_load_window:
         or a
         ret
 .unsupported:
-        ld a,WIN_ERR_UNSUPPORTED
-        or a
-        ret
+        jp win_reserved
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 ; A=index. The full array range was checked by s2_load_window.
 s2_load_item_index:
@@ -313,7 +281,7 @@ s2_validate_item:
         or a
         jr nz,.bad
         ld a,(item_scratch+WIN_ITEM_TYPE)
-        cp WIN_T_ZONE+1
+        cp WIN_T_RADIOBUTTON+1
         jr nc,.unsupported
 .type_supported:
         ld a,(item_scratch+WIN_ITEM_FLAGS)
@@ -350,13 +318,9 @@ s2_validate_item:
         xor a
         ret
 .unsupported:
-        ld a,WIN_ERR_UNSUPPORTED
-        or a
-        ret
+        jp win_reserved
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 ; Validate then draw item_scratch. s2_item_rendered is true only when a
 ; visual control was actually dispatched.
@@ -416,11 +380,14 @@ s2_process_item_marked:
         jp z,win_listbox_draw
         cp WIN_T_EDIT
         jp z,s4_edit_draw_item
+        cp WIN_T_CHECKBOX
+        jp z,s6_choice_item
+        cp WIN_T_RADIOBUTTON
+        jp z,s6_choice_item
         ; The only remaining Stage-2 visual type is WIN_T_BUTTON.
         ld bc,WIN_BUTTON_SIZE
         ld hl,button_scratch
         call s1_copy_caller_block
-        or a
         ret nz
         call s4_apply_button_focus_scratch
         ld a,(item_scratch+WIN_ITEM_FLAGS)
@@ -478,9 +445,7 @@ s2_require_nonempty_geometry:
         xor a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 s2_clear_item_dirty:
         ld hl,(s2_item_ptr)
@@ -513,14 +478,10 @@ s2_draw_window_body:
         xor a
         ret
 .draw:
-        ld hl,(window_scratch+WIN_WND_X)
-        ld (rect_x),hl
-        ld hl,(window_scratch+WIN_WND_Y)
-        ld (rect_y),hl
-        ld hl,(window_scratch+WIN_WND_WIDTH)
-        ld (rect_w),hl
-        ld hl,(window_scratch+WIN_WND_HEIGHT)
-        ld (rect_h),hl
+        ld hl,window_scratch
+        ld de,rect_x
+        ld bc,8
+        ldir
         call s1_require_frame_size
         or a
         ret nz
@@ -635,9 +596,7 @@ s2_win_set_backstore:
         or a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 win_open:
         push bc
@@ -657,7 +616,11 @@ s2_win_open:
         call s2_preflight_window_body
         or a
         ret nz
+        call s2_set_window_origin
         call s2_preflight_items
+        ld (s2_error),a
+        call s2_restore_origin
+        ld a,(s2_error)
         or a
         ret nz
         ld a,(backstore_pages)
@@ -816,9 +779,7 @@ s2_preflight_window_body:
         xor a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 s2_preflight_items:
         call s2_begin_item_walk
@@ -870,9 +831,7 @@ s2_preflight_items:
         xor a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 ; Geometry rules that the individual Stage-1 renderers would otherwise
 ; discover only after the background had already been saved.
@@ -890,6 +849,10 @@ s2_preflight_type_geometry:
         jr z,.button
         cp WIN_T_EDIT
         jp z,s4_preflight_edit_item
+        cp WIN_T_CHECKBOX
+        jp z,s6_validate_choice_item
+        cp WIN_T_RADIOBUTTON
+        jp z,s6_validate_choice_item
         xor a
         ret
 .label:
@@ -964,9 +927,7 @@ s2_preflight_type_geometry:
         xor a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 ; A modal label is prepared exactly as it will be rendered. This proves that
 ; its text pixels, not merely the declared fill rectangle, fit the saved
@@ -976,16 +937,11 @@ s2_preflight_label:
         ld bc,WIN_LABEL_SIZE
         ld hl,label_scratch
         call s1_copy_caller_block
-        or a
         ret nz
         call s2_require_label_geometry
         or a
         ret nz
-        call s2_set_window_origin
         call s1_label_prepare_loaded
-        ld (s2_error),a
-        call s2_restore_origin
-        ld a,(s2_error)
         or a
         ret nz
 
@@ -1018,9 +974,7 @@ s2_preflight_label:
         xor a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 s2_require_label_geometry:
         ld hl,(label_scratch+WIN_LBL_WIDTH)
@@ -1034,9 +988,7 @@ s2_require_label_geometry:
         xor a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jp win_error_argument
 
 s2_load_control_geometry:
         ld de,(item_scratch+WIN_ITEM_CONTROL)
@@ -1047,96 +999,58 @@ s2_load_control_geometry:
 ; Geometry uses relative control x/y. Zero width/height are allowed here;
 ; descriptor-specific renderers decide whether that is meaningful.
 s2_validate_geometry_screen:
-        ld hl,(control_geometry+0)
-        ld de,(window_scratch+WIN_WND_X)
-        add hl,de
-        jr c,.bad
-        ld (s2_geometry_abs_x),hl
-        ld de,320
-        or a
-        sbc hl,de
-        jr nc,.bad
-        ld hl,(control_geometry+2)
-        ld de,(window_scratch+WIN_WND_Y)
-        add hl,de
-        jr c,.bad
-        ld (s2_geometry_abs_y),hl
-        ld de,256
-        or a
-        sbc hl,de
-        jr nc,.bad
-        ld hl,(control_geometry+4)
+        ld hl,control_geometry
+        ld de,rect_scratch
+        ld bc,8
+        ldir
+        ld hl,(rect_scratch+WIN_RC_WIDTH)
         ld a,h
         or l
-        jr z,.height
-        ld de,(s2_geometry_abs_x)
-        add hl,de
-        jr c,.bad
-        ld de,321
-        or a
-        sbc hl,de
-        jr nc,.bad
+        jr nz,.height
+        inc hl
+        ld (rect_scratch+WIN_RC_WIDTH),hl
 .height:
-        ld hl,(control_geometry+6)
+        ld hl,(rect_scratch+WIN_RC_HEIGHT)
         ld a,h
         or l
-        jr z,.ok
-        ld de,(s2_geometry_abs_y)
-        add hl,de
-        jr c,.bad
-        ld de,257
-        or a
-        sbc hl,de
-        jr nc,.bad
-.ok:
-        xor a
-        ret
-.bad:
-        ld a,WIN_ERR_ARGUMENT
-        or a
-        ret
+        jr nz,.validate
+        inc hl
+        ld (rect_scratch+WIN_RC_HEIGHT),hl
+.validate:
+        jp s1_load_rect_internal
 
 s2_validate_geometry_window:
         ld hl,(control_geometry+0)
-        ld de,(window_scratch+WIN_WND_WIDTH)
-        or a
-        sbc hl,de
-        jr nc,.bad
+        ld de,(control_geometry+4)
+        ld bc,(window_scratch+WIN_WND_WIDTH)
+        call s1_validate_axis_window
+        jr c,.bad
         ld hl,(control_geometry+2)
-        ld de,(window_scratch+WIN_WND_HEIGHT)
-        or a
-        sbc hl,de
-        jr nc,.bad
-        ld hl,(control_geometry+4)
-        ld a,h
-        or l
-        jr z,.height
-        ld de,(control_geometry+0)
-        add hl,de
+        ld de,(control_geometry+6)
+        ld bc,(window_scratch+WIN_WND_HEIGHT)
+        call s1_validate_axis_window
         jr c,.bad
-        ld de,(window_scratch+WIN_WND_WIDTH)
-        or a
-        sbc hl,de
-        jr c,.height
-        jr nz,.bad
-.height:
-        ld hl,(control_geometry+6)
-        ld a,h
-        or l
-        jr z,.ok
-        ld de,(control_geometry+2)
-        add hl,de
-        jr c,.bad
-        ld de,(window_scratch+WIN_WND_HEIGHT)
-        or a
-        sbc hl,de
-        jr c,.ok
-        jr nz,.bad
-.ok:
         xor a
         ret
 .bad:
-        ld a,WIN_ERR_ARGUMENT
+        jp win_error_argument
+
+; HL=start, DE=size, BC=exclusive container limit. C=set on overflow/outside.
+s1_validate_axis_window:
+        or a
+        sbc hl,bc
+        jr nc,.bad
+        add hl,bc
+        add hl,de
+        jr c,.bad
+        or a
+        sbc hl,bc
+        jr c,.ok
+        jr z,.ok
+.bad:
+        scf
+        ret
+.ok:
         or a
         ret
 
@@ -1485,9 +1399,6 @@ backstore_alloc_offset: dw 0
 s2_alloc_final_page:    db 0
 s2_alloc_final_offset:  dw 0
 s2_rows_left:           dw 0
-s2_geometry_abs_x:      dw 0
-s2_geometry_abs_y:      dw 0
-
 s2_copy_restore:        db 0
 s2_copy_screen:         db 0
 s2_copy_x:              dw 0
