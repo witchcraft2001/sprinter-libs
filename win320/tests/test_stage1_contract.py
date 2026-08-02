@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent
 STAGE1 = (ROOT / "stage1.inc").read_text()
+ASM = (ROOT / "win320.asm").read_text()
 HARNESS = (ROOT / "tests" / "z80" / "t_stage1.asm").read_text()
 
 
@@ -20,7 +21,7 @@ class Stage1ContractTests(unittest.TestCase):
         values = [int(token[1:], 16) if token.startswith("#") else int(token)
                   for token in tokens]
         self.assertEqual([15, 7, 8, 1, 0, 7, 15, 0,
-                          1, 15, 7, 1, 7, 8, 15, 0], values)
+                          1, 15, 7, 1, 7, 1, 15, 0], values)
 
         palette = STAGE1.split("ega_palette:", 1)[1]
         rgb = re.findall(r"#[0-9a-fA-F]{2}", palette)
@@ -48,7 +49,7 @@ class Stage1ContractTests(unittest.TestCase):
         order = [
             "call s1_read_wf32",
             "ld c,DSS_CLOSE",
-            "call cache_loaded_font_widths",
+            "ld (font_page),a",
             "ld (font_block),a",
         ]
         position = 0
@@ -57,6 +58,14 @@ class Stage1ContractTests(unittest.TestCase):
             self.assertNotEqual(-1, found, token)
             position = found + len(token)
         self.assertIn("call s1_release_temp_font", loader)
+
+    def test_text_widths_are_read_from_the_mapped_wf32(self) -> None:
+        self.assertNotIn("font_width_cache", ASM)
+        cached = STAGE1.split("s1_cached_width:", 1)[1].split(
+            "; Clip text_scratch", 1
+        )[0]
+        self.assertIn("WF32_HEADER_SIZE+FONT320_WIDTHS", cached)
+        self.assertIn("ld bc,(work_base)", cached)
 
     def test_string_formats_share_one_bounded_scratch_path(self) -> None:
         copier = STAGE1.split("s1_copy_public_string:", 1)[1].split(
@@ -96,6 +105,9 @@ class Stage1ContractTests(unittest.TestCase):
         )[0]
         self.assertIn("fill_current_y", fill)
         self.assertNotIn("ld (line_y),a", fill)
+        choose = fill.split(".choose:", 1)[1].split(".vertical:", 1)[0]
+        self.assertIn("ld hl,(fill_w)\n        dec hl", choose)
+        self.assertNotIn("ld de,(fill_h)", choose)
 
     def test_mapping_restores_vram_then_data_and_port_y(self) -> None:
         unmap = STAGE1.split("s1_unmap_pair:", 1)[1].split(

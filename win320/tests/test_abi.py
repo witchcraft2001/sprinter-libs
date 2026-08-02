@@ -23,7 +23,7 @@ def equates() -> dict[str, int]:
 
 
 class AbiTests(unittest.TestCase):
-    def test_stage4_entries_and_frozen_table(self) -> None:
+    def test_stage5_entries_and_frozen_table(self) -> None:
         values = equates()
         self.assertEqual(0, values["WIN_INIT"])
         self.assertEqual(5, values["WIN_GET_CONFIG"])
@@ -69,7 +69,11 @@ class AbiTests(unittest.TestCase):
             ["win_edit_draw", "win_edit"],
             [label for label, _ in dispatch[29:31]],
         )
-        self.assertTrue(all(label == "win_reserved" for label, _ in dispatch[31:]))
+        self.assertEqual(
+            ["win_icon", "win_progress_init", "win_progress_draw",
+             "win_scrollbar_init", "win_scrollbar_draw", "win_listbox_draw"],
+            [label for label, _ in dispatch[31:]],
+        )
 
     def test_error_and_config_layout(self) -> None:
         values = equates()
@@ -190,7 +194,7 @@ class AbiTests(unittest.TestCase):
         self.assertIn("textcore_palette_base:", core)
         self.assertIn("or (hl)", core)
 
-    def test_stage4_keeps_implementation_version_and_claims_features(self) -> None:
+    def test_stage5_keeps_implementation_version_and_claims_features(self) -> None:
         source = (ROOT / "win320.asm").read_text()
         self.assertIn(
             "dw #0001                    ; implementation 0.1",
@@ -200,14 +204,14 @@ class AbiTests(unittest.TestCase):
             "win_get_config:", 1
         )[0]
         self.assertIn(
-            "ld ix,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR",
+            "ld ix,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR",
             version,
         )
         config = source.split("build_config:", 1)[1].split(
             "validate_config_destination:", 1
         )[0]
         self.assertIn(
-            "ld hl,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR",
+            "ld hl,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR",
             config,
         )
 
@@ -230,6 +234,23 @@ class AbiTests(unittest.TestCase):
                 "WIN_ED_ENTER", "WIN_ED_ESC", "WIN_ED_TAB", "WIN_ED_MOUSE"
             )],
         )
+
+    def test_stage5_control_layouts(self) -> None:
+        values = equates()
+        self.assertEqual(12, values["WIN_ICON_SIZE"])
+        self.assertEqual(9, values["WIN_ICO_PAGE"])
+        self.assertEqual(0x01, values["WIN_ICO_KEYED"])
+        self.assertEqual(12, values["WIN_PROGRESS_SIZE"])
+        self.assertEqual(10, values["WIN_PG_LAST_PX"])
+        self.assertEqual(22, values["WIN_SCROLLBAR_SIZE"])
+        self.assertEqual(16, values["WIN_SB_THUMB_POS"])
+        self.assertEqual(20, values["WIN_SB_LAST_POS"])
+        self.assertEqual(4, values["WIN_SB_MIN_THUMB"])
+        self.assertEqual(3, values["WIN_TEXT_REF_SIZE"])
+        self.assertEqual(28, values["WIN_LISTBOX_SIZE"])
+        self.assertEqual(22, values["WIN_LB_SCROLLBAR"])
+        self.assertEqual(24, values["WIN_LB_LAST_FIRST"])
+        self.assertEqual(26, values["WIN_LB_LAST_CURSOR"])
 
     def test_stage3_event_abi_layout_and_constants(self) -> None:
         values = equates()

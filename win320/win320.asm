@@ -1,8 +1,9 @@
-; WIN320.DLL — stage 4 editing and keyboard focus.
+; WIN320.DLL — stage 5 post-MVP controls.
 ; Public ABI is described in specs.md and win320.inc.
 
         ifndef WIN320_TEST_BUILD
         org 0
+win_image_base:
         endif
 
         db "L0"
@@ -46,12 +47,12 @@
         jp win_set_cursor           ; 28
         jp win_edit_draw            ; 29
         jp win_edit                 ; 30
-        jp win_reserved             ; 31
-        jp win_reserved             ; 32
-        jp win_reserved             ; 33
-        jp win_reserved             ; 34
-        jp win_reserved             ; 35
-        jp win_reserved             ; 36
+        jp win_icon                 ; 31
+        jp win_progress_init        ; 32
+        jp win_progress_draw        ; 33
+        jp win_scrollbar_init       ; 34
+        jp win_scrollbar_draw       ; 35
+        jp win_listbox_draw         ; 36
 
         include "win320.inc"
         include "../common/fontlayout.inc"
@@ -67,6 +68,8 @@ BIOS_GETMEMBLKPAGES     equ #c5
 FONT_STAGE_SIZE         equ 128
 VIDEO_PAGE              equ #50
 SCREEN_STRIDE           equ #0140
+S5_OVERLAY_OFFSET       equ #351e
+S5_OVERLAY_CODE_SIZE    equ 2786
 
 ; ---- public stage-0 entry points ------------------------------------------
 
@@ -189,7 +192,10 @@ win_init:
 .validate:
         call validate_loaded_font
         jr c,.font_cleanup
-        call cache_loaded_font_widths
+        ifndef WIN320_TEST_BUILD
+        call load_stage5_overlay
+        jr c,.font_cleanup
+        endif
         xor a
         scf
         ccf
@@ -284,7 +290,7 @@ win_set_screen:
 win_get_version:
         ld d,1
         ld e,0
-        ld ix,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
+        ld ix,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
         xor a
         scf
         ccf
@@ -328,11 +334,60 @@ win_get_config:
         include "stage2.inc"
         include "stage3.inc"
         include "stage4.inc"
-
+        ifdef WIN320_TEST_BUILD
+        ifdef WIN320_STAGE5_TEST
+        include "stage5.inc"
+        else
+win_icon:
+win_progress_init:
+win_progress_draw:
+win_scrollbar_init:
+win_scrollbar_draw:
+win_listbox_draw:
+s5_hit_detail:
+        endif
 win_reserved:
         ld a,WIN_ERR_UNSUPPORTED
         or a
         ret
+        else
+        include "stage5_stub.inc"
+        endif
+
+        ifndef WIN320_TEST_BUILD
+; The payload contains pre-relocated images in WIN3,WIN0,WIN1,WIN2 order.
+; WIN3, the recommended placement, therefore needs one bulk READ. Other
+; placements overwrite the same dead relocation tail until their image is read.
+load_stage5_overlay:
+        ld hl,s5_overlay_base
+        ld (s5_overlay_dest),hl
+        ld a,(code_window)
+        inc a
+        and 3
+        inc a
+        ld (s5_overlay_reads),a
+.read:
+        ld hl,(s5_overlay_dest)
+        ld de,S5_OVERLAY_CODE_SIZE
+        call read_payload
+        ret c
+        ld a,d
+        cp S5_OVERLAY_CODE_SIZE/256
+        jr nz,.bad
+        ld a,e
+        cp S5_OVERLAY_CODE_SIZE&255
+        jr nz,.bad
+        ld hl,s5_overlay_reads
+        dec (hl)
+        jr nz,.read
+        or a
+        ret
+.bad:
+        scf
+        ret
+s5_overlay_dest:       dw 0
+s5_overlay_reads:      db 0
+        endif
 
 ; ---- configuration helpers ------------------------------------------------
 
@@ -447,7 +502,7 @@ build_config:
         ld (config_buffer+10),a
         ld a,FONT320_HEIGHT
         ld (config_buffer+11),a
-        ld hl,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
+        ld hl,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
         ld (config_buffer+12),hl
         ld a,(font_page)
         ld (config_buffer+14),a
@@ -590,12 +645,12 @@ validate_loaded_font:
         jr c,.bad_pop
         cp 9
         jr nc,.bad_pop
-        dec a
-        ld e,a
-        ld d,0
-        ld hl,font_width_masks
-        add hl,de
-        ld c,(hl)
+        ld b,a
+        ld c,0
+.mask:
+        scf
+        rr c
+        djnz .mask
         ld a,(ix+96)
         ld d,a
         ld a,c
@@ -685,16 +740,6 @@ load_validation_tables:
         ldir
         jp unmap_font_page
 
-cache_loaded_font_widths:
-        call map_font_page
-        ld hl,(work_base)
-        ld de,WF32_HEADER_SIZE+FONT320_WIDTHS
-        add hl,de
-        ld de,font_width_cache
-        ld bc,FONT320_GLYPHS
-        ldir
-        jp unmap_font_page
-
 map_font_page:
         ld a,i
         jp po,.interrupts_off
@@ -722,23 +767,23 @@ unmap_font_page:
         ret
 
 read_work_page:
+        ld a,(work_page_port)
+        ld c,a
         ifdef WIN320_TEST_BUILD
         jp win_test_read_page
         else
-        ld a,(work_page_port)
-        ld c,a
         in a,(c)
         ret
         endif
 
 write_work_page:
-        ifdef WIN320_TEST_BUILD
-        jp win_test_write_page
-        else
         ld b,a
         ld a,(work_page_port)
         ld c,a
         ld a,b
+        ifdef WIN320_TEST_BUILD
+        jp win_test_write_page
+        else
         out (c),a
         ret
         endif
@@ -833,9 +878,16 @@ validation_index:       db 0
 expected_offset:        dw 0
 config_dest:            dw 0
 config_count:           db 0
-config_buffer:          ds WIN_CONFIG_SIZE,0
-io_scratch:             ds FONT_STAGE_SIZE,0
-font_width_cache:       ds FONT320_GLYPHS,0
-
-font_width_masks:
-        db #80,#c0,#e0,#f0,#f8,#fc,#fe,#ff
+; Configuration and payload I/O are non-reentrant with path/edit handling.
+; Reuse path_scratch instead of reserving another 148 bytes in the L0 image.
+config_buffer           equ path_scratch
+io_scratch              equ path_scratch
+        ifndef WIN320_TEST_BUILD
+        assert $-win_image_base <= S5_OVERLAY_OFFSET
+        if $-win_image_base < S5_OVERLAY_OFFSET
+        ds S5_OVERLAY_OFFSET-($-win_image_base),0
+        endif
+; A real label is required here: sprinter-mkdll discovers relocation bytes by
+; comparing two assembly origins.  An absolute overlay operand is not relocated.
+s5_overlay_base:
+        endif

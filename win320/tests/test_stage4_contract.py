@@ -12,12 +12,16 @@ HARNESS = (ROOT / "tests" / "z80" / "t_stage4.asm").read_text()
 
 
 class Stage4ContractTests(unittest.TestCase):
-    def test_entries_capabilities_and_reserved_tail(self) -> None:
+    def test_entries_capabilities_and_stage5_tail(self) -> None:
         self.assertIn("jp win_edit_draw            ; 29", SOURCE)
         self.assertIn("jp win_edit                 ; 30", SOURCE)
-        for entry in range(31, 37):
-            self.assertIn(f"jp win_reserved             ; {entry}", SOURCE)
-        self.assertIn("WIN_CAP_EDIT|WIN_CAP_FOCUS", SOURCE)
+        for entry, name in enumerate((
+            "win_icon", "win_progress_init", "win_progress_draw",
+            "win_scrollbar_init", "win_scrollbar_draw", "win_listbox_draw",
+        ), 31):
+            self.assertIn(f"jp {name}", SOURCE)
+            self.assertIn(f"; {entry}", SOURCE)
+        self.assertIn("WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON", SOURCE)
         self.assertIn('include "stage4.inc"', SOURCE)
 
     def test_edit_validation_is_bounded_and_publish_is_after_render(self) -> None:
@@ -145,6 +149,19 @@ class Stage4ContractTests(unittest.TestCase):
         self.assertEqual(3, activation.count("call win_halt_call"))
         self.assertIn("WIN_EV_LCLICK", activation)
         self.assertIn("WIN_BTN_PRESSED", (ROOT / "win320.inc").read_text())
+
+    def test_navigation_keys_are_not_consumed_and_listbox_repaints_focus(self) -> None:
+        focus = STAGE4.split("s4_keyboard_focus:", 1)[1].split(
+            "s4_tab_focus:", 1
+        )[0]
+        self.assertIn("or a                            ; not consumed", focus)
+        redraw = STAGE4.split("s4_redraw_focus_index:", 1)[1].split(
+            "s4_cursor_hide:", 1
+        )[0]
+        self.assertIn("cp WIN_T_LISTBOX", redraw)
+        harness = (ROOT / "tests" / "z80" / "t_stage4.asm").read_text()
+        self.assertIn("keys_arrow_up", harness)
+        self.assertIn("cp WIN_EV_KEY", harness)
 
     def test_modal_editor_has_all_keys_and_byte_exact_escape_buffer(self) -> None:
         editor = STAGE4.split("s4_edit_run:", 1)[1].split(

@@ -1,6 +1,6 @@
         org #8100-512
 
-; WIN320 Stage-3 visual test. WIN320.DLL must be beside this EXE.
+; WIN320 visual test. WIN320.DLL must be beside this EXE.
         dw #5845
         db #45,#00
         dw #0200,#0000,#0000,#0000,#0000,#0000
@@ -21,12 +21,17 @@ DSS_EXIT                equ #41
 DSS_PUTS                equ #5c
 DSS_GETMEM              equ #3d
 DSS_FREEMEM             equ #3e
+DSS_OPEN                equ #11
+DSS_CLOSE               equ #12
+DSS_READ                equ #13
 BIOS_GETMEMBLKPAGES     equ #c5
+PAGE_PORT1              equ #a2
 
 start:
         xor a
         ld (dll_loaded),a
         ld (backstore_allocated),a
+        ld (icon_pack_allocated),a
         ld (api_status),a
         ld (test_stage),a
         ld hl,msg_banner
@@ -66,7 +71,7 @@ start:
         jp nz,self_failed
         push ix
         pop hl
-        ld de,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
+        ld de,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
         or a
         sbc hl,de
         jp nz,self_failed
@@ -85,6 +90,15 @@ start:
 
         call allocate_backstore
         jp nz,api_failed
+
+        ; Development shortcut for focused MAME visual/input regression runs.
+        ifdef WIN320_STAGE5_ONLY
+        ld a,7
+        ld (test_stage),a
+        call run_stage5_showcase
+        jp nz,api_failed
+        jp success
+        endif
 
         xor a
         call select_target_screen
@@ -154,6 +168,11 @@ start:
         call run_stage4_dialogs
         jp nz,api_failed
 
+        ld a,7
+        ld (test_stage),a
+        call run_stage5_showcase
+        jp nz,api_failed
+
 success:
         call free_library
         call restore_video
@@ -212,13 +231,19 @@ allocate_backstore:
         ret
 
 draw_stage2_sequence:
+        ld a,#40
+        ld (test_stage),a
         ld e,WIN_TXT_ASCIIZ
         ld b,WIN_SET_TEXT_FORMAT
         call call_api
         ret nz
+        ld a,#41
+        ld (test_stage),a
         xor a
         call select_target_screen
         ret nz
+        ld a,#42
+        ld (test_stage),a
         ld de,demo_window
         ld b,WIN_DRAW
         call call_api
@@ -235,6 +260,8 @@ draw_stage2_sequence:
         ld a,WIN_IT_DIRTY
         ld (demo_items+0*WIN_ITEM_SIZE+WIN_ITEM_FLAGS),a
         ld (demo_items+2*WIN_ITEM_SIZE+WIN_ITEM_FLAGS),a
+        ld a,#43
+        ld (test_stage),a
         ld de,demo_window
         ld b,WIN_UPDATE
         call call_api
@@ -242,14 +269,20 @@ draw_stage2_sequence:
         call wait_step
 
         ; Modal A saves screen 0. Modal B is nested on screen 1.
+        ld a,#44
+        ld (test_stage),a
         ld de,modal_a_window
         ld b,WIN_OPEN
         call call_api
         ret nz
         call wait_step
+        ld a,#45
+        ld (test_stage),a
         ld a,1
         call select_target_screen
         ret nz
+        ld a,#46
+        ld (test_stage),a
         ld de,modal_b_window
         ld b,WIN_OPEN
         call call_api
@@ -258,12 +291,16 @@ draw_stage2_sequence:
         call show_screen
         call wait_step
 
+        ld a,#47
+        ld (test_stage),a
         ld b,WIN_CLOSE
         call call_api
         ret nz
         call wait_step
         ; The global target remains screen 1, but the next LIFO close restores
         ; the saved screen-0 rectangle from its stack record.
+        ld a,#48
+        ld (test_stage),a
         ld b,WIN_CLOSE
         call call_api
         ret nz
@@ -298,6 +335,14 @@ run_stage3_dialog:
         ld (stage3_track+WIN_TRK_STATE+7),a
         ld c,0                       ; mandatory application-side Mouse INIT
         rst #30
+        ld e,0                       ; install a defined BIOS cursor sprite
+        ld b,WIN_SET_CURSOR
+        call call_api
+        ret nz
+        ld hl,160                    ; keep the first SHOW away from an edge
+        ld de,128
+        ld c,4
+        rst #30
         ld c,1                       ; poll must leave this visible cursor up
         rst #30
         ld b,WIN_WAIT_RELEASE
@@ -307,12 +352,12 @@ run_stage3_dialog:
         ld b,WIN_POLL
         call call_api
         ret nz
+        ld c,2                       ; win_track owns the next SHOW/HIDE pair
+        rst #30
         ld de,stage3_track
         ld b,WIN_TRACK
         call call_api
         ret nz
-        ld c,2
-        rst #30
         ld hl,str_stage3_done
         ld (demo_label+WIN_LBL_TEXT),hl
         ld a,WIN_IT_DIRTY
@@ -564,6 +609,389 @@ run_stage4_dialogs:
         rst #30
         jp .edit_p
 
+run_stage5_showcase:
+        call load_icon_pack
+        ret nz
+        ld a,#80
+        ld (test_stage),a
+        xor a
+        call select_target_screen
+        ret nz
+        ld a,#81
+        ld (test_stage),a
+        ld e,WIN_TXT_ASCIIZ
+        ld b,WIN_SET_TEXT_FORMAT
+        call call_api
+        ret nz
+        ld de,0
+        ld b,WIN_SET_THEME
+        call call_api
+        ret nz
+        ld d,#ff
+        ld e,WIN_STYLE_CLEAR
+        ld b,WIN_STYLE
+        call call_api
+        ret nz
+        ld a,#82
+        ld (test_stage),a
+        ld de,stage5_progress
+        ld b,WIN_PROGRESS_INIT
+        call call_api
+        ret nz
+        ld a,#83
+        ld (test_stage),a
+        ld de,stage5_scrollbar
+        ld b,WIN_SCROLLBAR_INIT
+        call call_api
+        ret nz
+        ld a,#84
+        ld (test_stage),a
+        ld de,stage5_window
+        ld b,WIN_DRAW
+        call call_api
+        ret nz
+        xor a
+        call show_screen
+
+        ; Direct progress calls use the same origin as their declarative item.
+        ld a,#85
+        ld (test_stage),a
+        ld ix,16
+        ld e,16
+        ld b,WIN_SET_ORIGIN
+        call call_api
+        ret nz
+        ld a,#86
+        ld (test_stage),a
+        xor a
+.progress_up:
+        ld (stage5_progress+WIN_PG_PERCENT),a
+        push af
+        ld de,stage5_progress
+        ld b,WIN_PROGRESS_DRAW
+        call call_api
+        jr nz,.progress_failed
+        halt
+        pop af
+        inc a
+        cp 101
+        jr nz,.progress_up
+        ld a,100
+.progress_down:
+        ld (stage5_progress+WIN_PG_PERCENT),a
+        push af
+        ld de,stage5_progress
+        ld b,WIN_PROGRESS_DRAW
+        call call_api
+        jr nz,.progress_failed
+        halt
+        pop af
+        or a
+        jr z,.progress_done
+        dec a
+        jr .progress_down
+.progress_failed:
+        ld (api_status),a
+        pop af
+        xor a
+        ld ix,0
+        ld e,0
+        ld b,WIN_SET_ORIGIN
+        call call_api
+        ld a,(api_status)
+        or a
+        ret
+.progress_done:
+        ld a,#87
+        ld (test_stage),a
+        ld ix,0
+        ld e,0
+        ld b,WIN_SET_ORIGIN
+        call call_api
+        ret nz
+        ld a,#88
+        ld (test_stage),a
+        ifdef WIN320_STAGE5_AUTOMATED
+        ; Headless visual regression stops on the stable initial page.
+        call wait_step
+        xor a
+        ret
+        else
+        jp stage5_interact
+        endif
+
+; The library reports list rows and scrollbar parts; selection policy remains
+; application-owned.  This demo makes that contract visible and usable.
+stage5_interact:
+        ld hl,stage5_track+WIN_TRK_STATE
+        ld b,WIN_TRACK_SIZE-WIN_TRK_STATE
+        xor a
+.clear_state:
+        ld (hl),a
+        inc hl
+        djnz .clear_state
+        ld c,0                       ; application-side Mouse INIT
+        rst #30
+        ld e,0
+        ld b,WIN_SET_CURSOR
+        call call_api
+        ret nz
+        ld hl,160
+        ld de,128
+        ld c,4
+        rst #30
+        ld c,1
+        rst #30
+        ld b,WIN_WAIT_RELEASE
+        call call_api
+        ret nz
+        ld c,2                       ; win_track owns SHOW/HIDE from here
+        rst #30
+.track:
+        ld de,stage5_track
+        ld b,WIN_TRACK
+        call call_api
+        ret nz
+        ld a,(stage5_track+WIN_TRK_EVENT)
+        cp WIN_EV_RCLICK
+        jr z,.track
+        cp WIN_EV_OUTSIDE
+        jr z,.track
+        cp WIN_EV_KEY
+        jr z,.key
+        cp WIN_EV_LCLICK
+        jr z,.mouse
+        cp WIN_EV_REPEAT
+        jr nz,.track
+.mouse:
+        ld a,(stage5_track+WIN_TRK_ID)
+        cp 42
+        jp z,.done
+        cp 40
+        jr z,.list_click
+        cp 41
+        jr nz,.track
+        ld a,(stage5_track+WIN_TRK_PART)
+        cp WIN_SB_PART_BACK
+        jr z,.up
+        cp WIN_SB_PART_FORWARD
+        jr z,.down
+        cp WIN_SB_PART_PAGE_BACK
+        jr z,.page_up
+        cp WIN_SB_PART_PAGE_FORWARD
+        jr z,.page_down
+        jr .track
+.list_click:
+        ld hl,(stage5_track+WIN_TRK_ITEM)
+        ld a,h
+        and l
+        inc a
+        jr z,.track
+        jr .select
+.key:
+        ld a,(stage5_track+WIN_TRK_KEY_ASCII)
+        cp #1b
+        jp z,.done
+        ld a,(stage5_track+WIN_TRK_KEY_SCAN)
+        and #7f
+        cp #58                       ; Up
+        jr z,.up
+        cp #52                       ; Down
+        jr z,.down
+        cp #59                       ; Page Up
+        jr z,.page_up
+        cp #53                       ; Page Down
+        jr z,.page_down
+        cp #57                       ; Home
+        jr z,.home
+        cp #51                       ; End
+        jr z,.end
+        jr .track
+.up:
+        ld hl,(stage5_listbox+WIN_LB_CURSOR)
+        ld a,h
+        or l
+        jp z,.track
+        dec hl
+        jr .select
+.down:
+        ld hl,(stage5_listbox+WIN_LB_CURSOR)
+        ld de,11
+        or a
+        sbc hl,de
+        jp z,.track
+        add hl,de
+        inc hl
+        jr .select
+.page_up:
+        ld hl,(stage5_listbox+WIN_LB_CURSOR)
+        ld de,8
+        or a
+        sbc hl,de
+        jr nc,.select
+.home:
+        ld hl,0
+        jr .select
+.page_down:
+        ld hl,(stage5_listbox+WIN_LB_CURSOR)
+        ld de,8
+        add hl,de
+        ld de,12
+        or a
+        sbc hl,de
+        jr c,.restore_page
+.end:
+        ld hl,11
+        jr .select
+.restore_page:
+        add hl,de
+.select:
+        ld (stage5_listbox+WIN_LB_CURSOR),hl
+        ld de,(stage5_listbox+WIN_LB_FIRST)
+        push hl
+        or a
+        sbc hl,de
+        pop hl
+        jr c,.new_first
+        push hl
+        or a
+        sbc hl,de
+        ld a,h
+        or a
+        jr nz,.below_view
+        ld a,l
+        cp 8
+.below_view:
+        pop hl
+        jr c,.redraw
+        ld de,7
+        or a
+        sbc hl,de
+.new_first:
+        ld (stage5_listbox+WIN_LB_FIRST),hl
+.redraw:
+        ld a,WIN_IT_DIRTY|WIN_IT_HIT|WIN_IT_FOCUSABLE
+        ld (stage5_items+1*WIN_ITEM_SIZE+WIN_ITEM_FLAGS),a
+        ld a,WIN_IT_DIRTY|WIN_IT_HIT|WIN_IT_REPEAT
+        ld (stage5_items+2*WIN_ITEM_SIZE+WIN_ITEM_FLAGS),a
+        ld de,stage5_window
+        ld b,WIN_UPDATE
+        call call_api
+        ret nz
+        jp .track
+.done:
+        xor a
+        ret
+
+; Load the two payload pages of ICONS.WIP into application-owned EMM.
+load_icon_pack:
+        ld a,#70
+        ld (test_stage),a
+        ld hl,icon_pack_name
+        ld a,1
+        ld c,DSS_OPEN
+        rst #10
+        jp c,.bad
+        ld (icon_pack_handle),a
+        ld a,#71
+        ld (test_stage),a
+        ld a,(icon_pack_handle)
+        ld hl,icon_pack_header
+        ld de,12
+        ld c,DSS_READ
+        rst #10
+        jp c,.close_bad
+        ; Old DSS revisions do not consistently publish the transferred byte
+        ; count in DE.  Like FlexNavigator, trust CF and validate the bytes.
+        ld a,#72
+        ld (test_stage),a
+        ld hl,icon_pack_header
+        ld de,icon_pack_expected
+        ld b,12
+.header:
+        ld a,(de)
+        cp (hl)
+        jp nz,.close_bad
+        inc de
+        inc hl
+        djnz .header
+        ld a,#73
+        ld (test_stage),a
+        ld b,2
+        ld c,DSS_GETMEM
+        rst #10
+        jp c,.close_memory
+        ld (icon_pack_block),a
+        ld a,1
+        ld (icon_pack_allocated),a
+        ld a,#74
+        ld (test_stage),a
+        ld a,(icon_pack_block)
+        ld b,2
+        ld hl,icon_physical_pages
+        ld c,BIOS_GETMEMBLKPAGES
+        rst #08
+        jp c,.close_memory
+        in a,(PAGE_PORT1)
+        ld (icon_saved_win1),a
+        xor a
+        ld (icon_page_index),a
+.page:
+        add a,#75
+        ld (test_stage),a
+        ld a,(icon_page_index)
+        ld e,a
+        ld d,0
+        ld hl,icon_physical_pages
+        add hl,de
+        ld a,(hl)
+        out (PAGE_PORT1),a
+        ld a,(icon_pack_handle)
+        ld hl,#4000
+        ld de,#4000
+        ld c,DSS_READ
+        rst #10
+        jr c,.mapped_bad
+        ld a,(icon_page_index)
+        inc a
+        ld (icon_page_index),a
+        cp 2
+        jr nz,.page
+        ld a,(icon_saved_win1)
+        out (PAGE_PORT1),a
+        ld a,#77
+        ld (test_stage),a
+        ld a,(icon_pack_handle)
+        ld c,DSS_CLOSE
+        rst #10
+        jr c,.bad
+        ld a,(icon_physical_pages)
+        ld (stage5_icon8_a+WIN_ICO_PAGE),a
+        ld (stage5_icon8_b+WIN_ICO_PAGE),a
+        ld a,(icon_physical_pages+1)
+        ld (stage5_icon16_a+WIN_ICO_PAGE),a
+        ld (stage5_icon16_b+WIN_ICO_PAGE),a
+        xor a
+        ret
+.mapped_bad:
+        ld a,(icon_saved_win1)
+        out (PAGE_PORT1),a
+.close_bad:
+        ld a,(icon_pack_handle)
+        ld c,DSS_CLOSE
+        rst #10
+.bad:
+        ld a,WIN_ERR_ARGUMENT
+        or a
+        ret
+.close_memory:
+        ld a,(icon_pack_handle)
+        ld c,DSS_CLOSE
+        rst #10
+        ld a,WIN_ERR_MEMORY
+        or a
+        ret
+
 wait_step:
         ld c,DSS_WAITKEY
         rst #10
@@ -730,6 +1158,7 @@ load_failed:
         ret
 
 free_library:
+        call free_icon_pack
         ld a,(dll_loaded)
         or a
         jr z,free_backstore
@@ -737,6 +1166,18 @@ free_library:
         ld (dll_loaded),a
         ld hl,(dll_handle)
         call LIBMAN.l_free
+        jr free_backstore
+
+free_icon_pack:
+        ld a,(icon_pack_allocated)
+        or a
+        ret z
+        xor a
+        ld (icon_pack_allocated),a
+        ld a,(icon_pack_block)
+        ld c,DSS_FREEMEM
+        rst #10
+        ret
 
 free_backstore:
         ld a,(backstore_allocated)
@@ -916,7 +1357,7 @@ demo_zone:
 
 stage3_track:
         dw demo_window,0
-        db 0,WIN_TRK_OUTSIDE|WIN_TRK_HALT
+        db 0,WIN_TRK_OUTSIDE|WIN_TRK_HALT|WIN_TRK_SHOW_CUR
         ds WIN_TRACK_SIZE-6,0
 
 modal_a_window:
@@ -948,7 +1389,7 @@ modal_b_items:
         dw modal_b_label,0
 modal_b_label:
         dw 8,32,144,8
-        db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL
+        db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL|WIN_LABEL_CLIP
         dw str_modal_b
 
 ; ---- Stage-4 edit/focus dialogs -----------------------------------------
@@ -1017,6 +1458,97 @@ stage4_track_p:
         db 0,WIN_TRK_HALT|WIN_TRK_SHOW_CUR|WIN_TRK_TAB_FOCUS
         ds WIN_TRACK_SIZE-6,0
 
+; ---- Stage-5 controls and WIP1 showcase ----------------------------------
+
+stage5_window:
+        dw 16,16,288,224
+        db #ff,0,12,1
+        dw stage5_items
+        db #ff,0
+stage5_items:
+        db WIN_T_LABEL,0,#ff,0
+        dw stage5_label,0
+        db WIN_T_LISTBOX,WIN_IT_HIT|WIN_IT_FOCUSABLE,40,0
+        dw stage5_listbox,0
+        db WIN_T_SCROLLBAR,WIN_IT_HIT|WIN_IT_REPEAT,41,0
+        dw stage5_scrollbar,0
+        db WIN_T_PROGRESS,0,#ff,0
+        dw stage5_progress,0
+        db WIN_T_ICON,0,#ff,0
+        dw stage5_icon8_a,0
+        db WIN_T_ICON,0,#ff,0
+        dw stage5_icon8_b,0
+        db WIN_T_ICON,0,#ff,0
+        dw stage5_icon16_a,0
+        db WIN_T_ICON,0,#ff,0
+        dw stage5_icon16_b,0
+        db WIN_T_LABEL,0,#ff,0
+        dw stage5_hint,0
+        ; Non-hit standard buttons provide the endpoint bevel and the same
+        ; arrow glyphs used by the rest of WIN320.  Hit ownership remains
+        ; with the composite scrollbar item above.
+        db WIN_T_BUTTON,0,#ff,0
+        dw stage5_scroll_up,0
+        db WIN_T_BUTTON,0,#ff,0
+        dw stage5_scroll_down,0
+        db WIN_T_BUTTON,WIN_IT_HIT|WIN_IT_FOCUSABLE,42,0
+        dw stage5_exit,0
+stage5_label:
+        dw 8,8,272,8
+        db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL
+        dw str_stage5_title
+stage5_listbox:
+        dw 16,32,200,104
+        db 12,#ff,#ff,WIN_LB_FRAME
+        dw 12,0,0,stage5_list_items
+        db 0,0
+        dw stage5_scrollbar,#ffff,#ffff
+stage5_scrollbar:
+        dw 216,32,12,104
+        dw 0,0,0
+        db WIN_SB_ARROWS,0
+        dw 0,0,#ffff
+stage5_progress:
+        dw 16,148,214,12
+        db WIN_PG_FRAME,0
+        dw #ffff
+stage5_icon8_a:
+        dw 246,36,8,8
+        db WIN_ICO_KEYED,0,0,0
+stage5_icon8_b:
+        dw 266,36,8,8
+        db WIN_ICO_KEYED,0,1,0
+stage5_icon16_a:
+        dw 242,64,16,16
+        db WIN_ICO_KEYED,0,0,0
+stage5_icon16_b:
+        dw 262,88,16,16
+        db WIN_ICO_KEYED,0,1,0
+stage5_hint:
+        dw 8,176,272,8
+        db #ff,WIN_LABEL_CENTER|WIN_LABEL_FILL
+        dw str_stage5_hint
+stage5_scroll_up:
+        dw 216,32,12,12
+        db #ff,WIN_BTN_GLYPH
+        dw #0018
+stage5_scroll_down:
+        dw 216,124,12,12
+        db #ff,WIN_BTN_GLYPH
+        dw #0019
+stage5_exit:
+        dw 104,192,80,20
+        db #ff,0
+        dw str_stage5_exit
+stage5_track:
+        dw stage5_window,0
+        db 0,WIN_TRK_ANY_KEY|WIN_TRK_OUTSIDE|WIN_TRK_HALT|WIN_TRK_SHOW_CUR|WIN_TRK_TAB_FOCUS
+        ds WIN_TRACK_SIZE-6,0
+stage5_list_items:
+        dw str_stage5_00,str_stage5_01,str_stage5_02,str_stage5_03
+        dw str_stage5_04,str_stage5_05,str_stage5_06,str_stage5_07
+        dw str_stage5_08,str_stage5_09,str_stage5_10,str_stage5_11
+
 blue_theme:
         db 15,1,9,3,15,8,0,15
         db 3,15,1,11,1,9,#55,0
@@ -1029,20 +1561,35 @@ str_focus:       db "Focus",0
 str_pressed:     db "Pressed",0
 str_disabled:    db "Disabled",0
 str_page0_hint:  db "Any key: alternate screen",0
-str_declarative: db "Stage 3: declarative draw (key = dirty update)",0
-str_stage3_hint: db "Stage 3: click blue zone, right-click, or click outside",0
+str_declarative: db "Stage 2: declarative draw - press any key",0
+str_stage3_hint: db "Stage 3: click yellow zone, right-click, or click outside",0
 str_stage3_done: db "Stage 3 event received; press a key to finish",0
-str_dirty_done:  db "Dirty update: only label and fill changed",0
+str_dirty_done:  db "Dirty update complete - press any key",0
 str_item_disabled: db "Item-disabled",0
-str_modal_a:     db "Modal A saved on screen 0",0
+str_modal_a:     db "Modal A / screen 0 - press any key",0
 str_nested_next: db "Next: screen 1",0
-str_modal_b:     db "Nested modal B / screen 1",0
+str_modal_b:     db "Nested modal B / screen 1 - press any key",0
 str_stage4_edit: db "Edit: Enter accept, Esc undo, Tab Continue",0
 str_stage4_button: db "Continue",0
 str_stage4_result_enter: db "Enter: accepted. Press any key",0
 str_stage4_result_esc: db "Esc: original restored. Press any key",0
 str_stage4_result_mouse: db "Mouse event accepted. Press any key",0
 str_stage4_result_button: db "Continue activated. Press any key",0
+str_stage5_title: db "Stage 5: icons, listbox, scrollbar, progress",0
+str_stage5_hint: db "Arrows/PgUp/PgDn, mouse or Tab; Esc exits",0
+str_stage5_exit: db "Exit",0
+str_stage5_00: db "BOOT",0
+str_stage5_01: db "CONFIG",0
+str_stage5_02: db "DEMOS",0
+str_stage5_03: db "DOCS",0
+str_stage5_04: db "GAMES",0
+str_stage5_05: db "LIB",0
+str_stage5_06: db "NETWORK",0
+str_stage5_07: db "SYSTEM",0
+str_stage5_08: db "TOOLS",0
+str_stage5_09: db "WIN320.DLL",0
+str_stage5_10: db "WIN320.EXE",0
+str_stage5_11: db "ICONS.WIP",0
 
 pstr_title:      db 39,"WIN320 Stage 4 / screen 1 / Pascal text"
 pstr_long:       db 55,"Alternate theme, centered and clipped Pascal label tail"
@@ -1059,9 +1606,14 @@ pstr_stage4_result_mouse: db 29,"Mouse event accepted. Any key"
 pstr_stage4_result_button: db 27,"Continue activated. Any key"
 
 missing_font:    db "__WIN320_MISSING__.FNT",0
+icon_pack_name:  db "ICONS.WIP",0
+icon_pack_expected:
+        db "WIP1",1,2
+        dw 12
+        db 8,2,16,2
 dll_name:        db "WIN320.DLL",0
-msg_banner:      db "WIN320 Stage 4 visual test",13,10,0
-msg_ok:          db "PASS: Stage 4 editing and focus sequence.",13,10,0
+msg_banner:      db "WIN320 Stage 5 visual test",13,10,0
+msg_ok:          db "PASS: Stage 5 control sequence.",13,10,0
 msg_failed:      db "FAIL: stage=$",0
 msg_status:      db " status=$",0
 msg_load_failed: db "FAIL: load reason=$",0
@@ -1081,5 +1633,12 @@ backstore_block: db 0
 backstore_allocated: db 0
 backstore_physical_pages:
         ds WIN_BACKSTORE_MAX_PAGES,0
+icon_pack_handle: db 0
+icon_pack_block: db 0
+icon_pack_allocated: db 0
+icon_saved_win1: db 0
+icon_page_index: db 0
+icon_pack_header: ds 12,0
+icon_physical_pages: ds 2,0
 
         include "libman.asm"

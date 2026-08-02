@@ -201,12 +201,16 @@ win_set_cursor:
         ld d,a
         jr .load
 .arrow:
-        ld ix,s3_cursor_arrow
+        ld hl,s3_cursor_arrow_packed
+        ld b,30
+        call s3_unpack_cursor
         ld hl,#0d09
         ld de,0
         jr .load
 .wait:
-        ld ix,s3_cursor_wait
+        ld hl,s3_cursor_wait_packed
+        ld b,32
+        call s3_unpack_cursor
         ld hl,#0e09
         ld de,#0704
 .load:
@@ -750,9 +754,13 @@ s3_hover_action:
         jp s3_emit_index
 
 s3_keyboard_iteration:
-        ld c,#31
+        ; SCANKEY leaves Z set both for an empty buffer and for non-ASCII
+        ; navigation keys (E=0).  CTRLKEY distinguishes the two cases.
+        ld c,#33
         call win_scankey_call
         ret z
+        ld c,#31
+        call win_scankey_call
         ld a,e
         ld (s3_track_scratch+WIN_TRK_KEY_ASCII),a
         ld a,d
@@ -761,9 +769,7 @@ s3_keyboard_iteration:
         ld (s3_track_scratch+WIN_TRK_KEY_MODS),a
         call s4_keyboard_focus
         ret c
-        call s3_find_key
-        ret nc
-        ret
+        jp s3_find_key
 
 ; C=set on a selected hotkey/any-key event.
 s3_find_key:
@@ -882,12 +888,15 @@ s3_emit_index:
         ld a,(s3_pending_event)
         ld (s3_track_scratch+WIN_TRK_EVENT),a
         call s3_load_event_item
+        ifdef WIN320_TEST_BUILD
+        call s5_hit_detail
+        else
+        call s5_overlay_base+18
+        endif
         ld a,(s3_event_index)
         ld (s3_track_scratch+WIN_TRK_INDEX),a
         ld a,(item_scratch+WIN_ITEM_ID)
         ld (s3_track_scratch+WIN_TRK_ID),a
-        ld hl,(s2_item_ptr)
-        ld (s3_track_scratch+WIN_TRK_ITEM),hl
         ld hl,(item_scratch+WIN_ITEM_USER_DATA)
         ld (s3_track_scratch+WIN_TRK_USER_DATA),hl
         ld a,(s3_mouse_buttons)
@@ -1036,37 +1045,51 @@ s3_button_ptr:         dw 0
 s3_button_draw_error:  db 0
 s3_cursor_hidden:      db 0
 s3_runtime_error:      db 0
-s3_cursor_scratch:     ds WIN_CURSOR_SIZE,0
+s3_cursor_scratch      equ path_scratch
 s3_cursor_pixels:      dw 0
 s3_track_scratch:      ds WIN_TRACK_SIZE,0
 
 ; Exact gfxview BIOS cursor payloads: arrow 9x13, wait 9x14.
-s3_cursor_arrow:
-        db 0,0,#ff,#ff,#ff,#ff,#ff,#ff,#ff
-        db 0,#fe,0,#ff,#ff,#ff,#ff,#ff,#ff
-        db 0,#fe,#fe,0,#ff,#ff,#ff,#ff,#ff
-        db 0,#fe,#fe,#fe,0,#ff,#ff,#ff,#ff
-        db 0,#fe,#fe,#fe,#fe,0,#ff,#ff,#ff
-        db 0,#fe,#fe,#fe,#fe,#fe,0,#ff,#ff
-        db 0,#fe,#fe,#fe,#fe,#fe,#fe,0,#ff
-        db 0,#fe,#fe,#fe,#fe,0,0,0,0
-        db 0,#fe,#fe,0,#fe,0,#ff,#ff,#ff
-        db 0,#fe,0,0,#fe,#fe,0,#ff,#ff
-        db 0,0,#ff,#ff,0,#fe,0,#ff,#ff
-        db 0,#ff,#ff,#ff,0,#fe,#fe,0,#ff
-        db #ff,#ff,#ff,#ff,#ff,0,0,#ff,#ff
-s3_cursor_wait:
-        db 0,0,0,0,0,0,0,0,0
-        db 0,#fe,#fe,#fe,#fe,#fe,#fe,#fe,0
-        db 0,0,0,0,0,0,0,0,0
-        db #ff,0,#fe,#fe,#fe,#fe,#fe,0,#ff
-        db #ff,0,#fe,#fe,#fe,0,#fe,0,#ff
-        db #ff,#ff,0,#fe,#f0,#fe,0,#ff,#ff
-        db #ff,#ff,#ff,0,#fe,0,#ff,#ff,#ff
-        db #ff,#ff,#ff,0,#fe,0,#ff,#ff,#ff
-        db #ff,#ff,0,#fe,#f0,#fe,0,#ff,#ff
-        db #ff,0,#fe,#fe,#fe,0,#fe,0,#ff
-        db #ff,0,#fe,#fe,#fe,#fe,#fe,0,#ff
-        db 0,0,0,0,0,0,0,0,0
-        db 0,#fe,#fe,#fe,#fe,#fe,#fe,#fe,0
-        db 0,0,0,0,0,0,0,0,0
+; Built-in cursors use a compact 2-bit stream (0, #fe, #ff, #f0).  Expanding
+; into the shared graphics workspace saves 136 bytes in the L0 prefix.
+s3_unpack_cursor:
+        ld de,xor_scratch
+s3_unpack_byte:
+        ld a,(hl)
+        inc hl
+        ld (s3_unpack_cursor_shift+1),a
+        ld c,4
+s3_unpack_pixel:
+s3_unpack_cursor_shift:
+        ld a,0
+        rlca
+        rlca
+        ld (s3_unpack_cursor_shift+1),a
+        and 3
+        jr z,s3_unpack_store
+        cp 1
+        jr nz,s3_unpack_opaque
+        ld a,#fe
+        jr s3_unpack_store
+s3_unpack_opaque:
+        cp 2
+        ld a,#ff
+        jr z,s3_unpack_store
+        ld a,#f0
+s3_unpack_store:
+        ld (de),a
+        inc de
+        dec c
+        jr nz,s3_unpack_pixel
+        djnz s3_unpack_byte
+        ld ix,xor_scratch
+        ret
+
+s3_cursor_arrow_packed:
+        db #0a,#aa,#84,#aa,#a1,#4a,#a8,#54,#aa,#15
+        db #4a,#85,#54,#a1,#55,#48,#55,#00,#14,#4a
+        db #84,#14,#a0,#a1,#28,#a8,#52,#aa,#82,#80
+s3_cursor_wait_packed:
+        db #00,#00,#05,#55,#40,#00,#02,#15,#52,#85,#44
+        db #a8,#74,#aa,#84,#aa,#a1,#2a,#a1,#d2,#a1,#51
+        db #28,#55,#48,#00,#00,#15,#55,#00,#00,#00

@@ -66,11 +66,10 @@ win_load_font:
         call win_dss_call
         jr c,.font_release_closed
 
-        ; The file is closed and the temporary page is valid. Cache its width
-        ; table first, then publish the new page/block as one state update.
+        ; The file is closed and the temporary page is valid. Publish the new
+        ; page/block as one state update; measurements read its WF32 widths.
         ld a,(temp_font_page)
         ld (font_page),a
-        call cache_loaded_font_widths
         ld a,(font_block)
         ld (old_font_block),a
         ld a,(temp_font_block)
@@ -180,8 +179,7 @@ s1_read_wf32:
         ld (copy_offset),hl
         jr .read
 .validate:
-        call validate_loaded_font
-        ret
+        jp validate_loaded_font
 .bad:
         scf
         ret
@@ -637,8 +635,7 @@ s1_map_vram:
         call s1_read_page_c
         ld (saved_vram_page),a
         ld a,VIDEO_PAGE
-        call s1_write_page_c
-        ret
+        jp s1_write_page_c
 
 s1_unmap_vram:
         ld a,#c0
@@ -867,8 +864,19 @@ s1_vfill_size:
         ld b,b
         ret
 
-; fill_x/y/w/h and fill_color are set. Extents are nonzero and validated.
+; fill_x/y/w/h and fill_color are set.  Public rectangles are validated, but
+; computed control parts can legitimately collapse to zero.  Treat those as
+; empty: accelerator count zero means 256, so forwarding it would paint a
+; wrapped full-screen stripe instead of doing no work.
 s1_fill_mapped:
+        ld hl,(fill_w)
+        ld a,h
+        or l
+        ret z
+        ld hl,(fill_h)
+        ld a,h
+        or l
+        ret z
         ifdef WIN320_TEST_BUILD
         jp s1_fill_mapped_test
         else
@@ -891,11 +899,14 @@ s1_fill_mapped:
         sbc hl,de
         jr z,.vertical
 .choose:
+        ; Multi-column rectangles are filled row by row.  The accelerator's
+        ; vertical command is kept only for true one-pixel lines: on mode #81
+        ; a wider vertical fill can escape the requested PORT_Y span and leave
+        ; a full-height stripe (notably the 10-pixel Stage-5 scrollbar).
         ld hl,(fill_w)
-        ld de,(fill_h)
-        or a
-        sbc hl,de
-        jr c,.vertical
+        dec hl
+        ld a,h
+        or l
         jr z,.vertical
         jr .horizontal
 .vertical:
@@ -1694,6 +1705,17 @@ s1_focus_mapped:
 ; ---- static text -----------------------------------------------------------
 
 s1_measure_text:
+        call map_font_page
+        call s1_measure_text_mapped
+        jp unmap_font_page
+
+s1_measure_clip_text:
+        call map_font_page
+        call s1_measure_text_mapped
+        call s1_clip_text
+        jp unmap_font_page
+
+s1_measure_text_mapped:
         ld hl,text_scratch
         ld de,0
 .loop:
@@ -1701,12 +1723,9 @@ s1_measure_text:
         or a
         jr z,.done
         inc hl
-        ld c,a
-        ld b,0
         push hl
-        ld hl,font_width_cache
-        add hl,bc
-        ld c,(hl)
+        call s1_cached_width
+        ld c,a
         ld b,0
         ex de,hl
         add hl,bc
@@ -1715,6 +1734,21 @@ s1_measure_text:
         jr .loop
 .done:
         ld (text_pixel_width),de
+        ret
+
+; A=glyph index, A=1..8 proportional width from the mapped WF32 table.
+s1_cached_width:
+        ld l,a
+        ld h,0
+        ld bc,WF32_HEADER_SIZE+FONT320_WIDTHS
+        add hl,bc
+        ifdef WIN320_TEST_BUILD
+        ld bc,win_test_font_memory
+        else
+        ld bc,(work_base)
+        endif
+        add hl,bc
+        ld a,(hl)
         ret
 
 ; Clip text_scratch to label width and add two literal dots.
@@ -1737,7 +1771,8 @@ s1_clip_text:
         ; bytes so the terminator cannot spill into the adjacent scratch.
         xor a
         ld (text_scratch+253),a
-        ld a,(font_width_cache+'.')
+        ld a,'.'
+        call s1_cached_width
         add a,a
         ld (dots_width),a
         ld e,a
@@ -1753,12 +1788,9 @@ s1_clip_text:
         ld a,(hl)
         or a
         jr z,.append
-        ld c,a
-        ld b,0
         push hl
-        ld hl,font_width_cache
-        add hl,bc
-        ld c,(hl)
+        call s1_cached_width
+        ld c,a
         ld b,0
         ex de,hl
         add hl,bc
@@ -1894,6 +1926,7 @@ s1_label_loaded:
         call s1_label_prepare_loaded
         or a
         ret nz
+s1_label_render_prepared:
         call s1_resolve_pair
         or a
         ret nz
@@ -1952,8 +1985,7 @@ s1_label_prepare_loaded:
         ld a,(font_page)
         cp #ff
         jr z,.font
-        call s1_measure_text
-        call s1_clip_text
+        call s1_measure_clip_text
         call s1_label_position
         xor a
         ret
@@ -2353,15 +2385,19 @@ clip_prefix_limit:      dw 0
 rect_scratch:           ds WIN_RECT_SIZE,0
 label_scratch:          ds WIN_LABEL_SIZE,0
 button_scratch:         ds WIN_BUTTON_SIZE,0
-theme_scratch:          ds WIN_THEME_SIZE,0
+theme_scratch           equ path_scratch
 current_theme:          ds WIN_THEME_SIZE,0
 path_scratch:           ds 256,0
 text_scratch:           ds 256,0
-xor_scratch:            ds 320,0
+; Text rendering and XOR/caret restoration never consume their buffers at
+; the same time: an old caret is restored before the next glyph is staged.
+; Share the larger 320-byte workspace to keep the L0 image below 16 KiB.
+xor_scratch             equ text_scratch
+                        ds 64,0
 
 default_theme:
         db 15,7,8,1,0,7,15,0
-        db 1,15,7,1,7,8,#0f,0
+        db 1,15,7,1,7,1,#0f,0
 
 ; Canonical 16-colour EGA palette (RGB8), installed at #F0..#FF.
 ega_palette:

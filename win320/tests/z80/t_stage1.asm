@@ -269,7 +269,7 @@ start:
         call win_get_version
         push ix
         pop hl
-        ld de,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
+        ld de,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR
         or a
         sbc hl,de
         ld a,8
@@ -489,8 +489,8 @@ test_textcore_and_cleanup_guards:
         xor a
         ld (text_scratch+255),a
         ld a,1
-        ld (font_width_cache+'A'),a
-        ld (font_width_cache+'.'),a
+        ld (win_test_font_memory+WF32_HEADER_SIZE+FONT320_WIDTHS+'A'),a
+        ld (win_test_font_memory+WF32_HEADER_SIZE+FONT320_WIDTHS+'.'),a
         ld hl,256
         ld (label_w),hl
         ld hl,257
@@ -498,9 +498,9 @@ test_textcore_and_cleanup_guards:
         ld a,WIN_LABEL_CLIP
         ld (label_flags),a
         ld a,#a5
-        ld (xor_scratch),a
+        ld (text_scratch+319),a
         call s1_clip_text
-        ld a,(xor_scratch)
+        ld a,(text_scratch+319)
         cp #a5
         ld a,49
         call t_expect_z

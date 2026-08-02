@@ -315,12 +315,6 @@ s2_validate_item:
         ld a,(item_scratch+WIN_ITEM_TYPE)
         cp WIN_T_ZONE+1
         jr nc,.unsupported
-        cp WIN_T_ICON
-        jr c,.type_supported
-        cp WIN_T_EDIT
-        jr z,.type_supported
-        cp WIN_T_ZONE
-        jr nz,.unsupported
 .type_supported:
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_PRESS|WIN_IT_REPEAT|WIN_IT_HOVER
@@ -371,10 +365,8 @@ s2_process_item:
 s2_process_item_marked:
         ld (s2_item_rendered),a
         call s2_validate_item
-        or a
         ret nz
         call s4_sync_item_focus
-        or a
         ret nz
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_HIDDEN
@@ -386,7 +378,7 @@ s2_process_item_marked:
         or a
         ret z
         cp WIN_T_ZONE
-        jr z,s2_process_zone
+        jp z,s2_process_zone
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_HIT
         jr z,.dispatch
@@ -398,7 +390,6 @@ s2_process_item_marked:
         cp WIN_T_BUTTON
         jr z,.dispatch
         call s2_validate_hit_geometry
-        or a
         ret nz
 .dispatch:
         ld hl,s2_item_rendered
@@ -415,6 +406,14 @@ s2_process_item_marked:
         jp z,win_panel
         cp WIN_T_SEPARATOR
         jp z,win_separator
+        cp WIN_T_ICON
+        jp z,win_icon
+        cp WIN_T_PROGRESS
+        jp z,win_progress_draw
+        cp WIN_T_SCROLLBAR
+        jp z,win_scrollbar_draw
+        cp WIN_T_LISTBOX
+        jp z,win_listbox_draw
         cp WIN_T_EDIT
         jp z,s4_edit_draw_item
         ; The only remaining Stage-2 visual type is WIN_T_BUTTON.
@@ -432,7 +431,6 @@ s2_process_item_marked:
         ld (button_scratch+WIN_BTN_FLAGS),a
 .button:
         call s1_button_loaded
-        or a
         ret nz
         call s4_publish_button_focus
         xor a
@@ -442,7 +440,6 @@ s2_process_label:
         ld bc,WIN_LABEL_SIZE
         ld hl,label_scratch
         call s1_copy_caller_block
-        or a
         ret nz
         call s2_require_label_geometry
         or a

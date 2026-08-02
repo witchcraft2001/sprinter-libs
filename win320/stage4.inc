@@ -287,12 +287,7 @@ s4_char_width_at:
 .space:
         ld a,' '
 .width:
-        ld e,a
-        ld d,0
-        ld hl,font_width_cache
-        add hl,de
-        ld a,(hl)
-        ret
+        jp s1_cached_width
 
 s4_render_loaded_edit:
         ifdef WIN320_TEST_BUILD
@@ -397,11 +392,7 @@ s4_render_edit_content_mapped_fresh:
         ld a,'*'
 .character:
         ld (s4_draw_char),a
-        ld e,a
-        ld d,0
-        ld hl,font_width_cache
-        add hl,de
-        ld a,(hl)
+        call s1_cached_width
         ld (s4_draw_char_width),a
         ld e,a
         ld d,0
@@ -585,6 +576,8 @@ s4_sync_item_focus:
         ld a,(item_scratch+WIN_ITEM_TYPE)
         cp WIN_T_BUTTON
         jr z,s4_sync_builtin
+        cp WIN_T_LISTBOX
+        jr z,s4_sync_builtin
         cp WIN_T_EDIT
         jr z,s4_sync_builtin
         xor a
@@ -723,6 +716,8 @@ s4_item_needs_focus_redraw:
         ld a,(item_scratch+WIN_ITEM_TYPE)
         cp WIN_T_BUTTON
         jr z,.visual
+        cp WIN_T_LISTBOX
+        jr z,.visual
         cp WIN_T_EDIT
         jr z,.visual
         or a
@@ -755,7 +750,9 @@ s4_keyboard_focus:
         cp #0d
         jr z,.button
         cp #20
-        ret nz
+        jr z,.button
+        or a                            ; not consumed: always return CF=0
+        ret
 .button:
         call s4_activate_focused_button
         ret nc
@@ -935,9 +932,9 @@ s4_redraw_focus_index:
         cp WIN_T_BUTTON
         jr z,.visual
         cp WIN_T_EDIT
-        jr nz,.none
-        jr .visual
-.none:
+        jr z,.visual
+        cp WIN_T_LISTBOX
+        jr z,.visual
         xor a
         ret
 .visual:

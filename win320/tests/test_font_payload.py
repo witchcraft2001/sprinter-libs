@@ -55,13 +55,15 @@ class FontPayloadTests(unittest.TestCase):
             expected += bin(columns).count("1") * 8
         self.assertEqual(len(raw), expected)
 
-    def test_release_has_exactly_one_embedded_payload(self) -> None:
+    def test_release_has_font_and_stage5_overlay_payloads(self) -> None:
         library = (ROOT / "build" / "WIN320.DLL").read_bytes()
         self.assertEqual(1, int.from_bytes(library[14:16], "little"))
         prefix_size = int.from_bytes(library[2:4], "little")
         payload = library[prefix_size:]
         self.assertEqual(b"WF32", payload[:4])
-        self.assertEqual(8 + int.from_bytes(payload[6:8], "little"), len(payload))
+        font_size = 8 + int.from_bytes(payload[6:8], "little")
+        self.assertEqual(10616, font_size)
+        self.assertEqual(4 * 2786, len(payload[font_size:]))
         self.assertFalse((ROOT / "WIN320.FNT").exists())
 
     def test_attach_rejects_malformed_input(self) -> None:

@@ -28,13 +28,19 @@ def main() -> None:
     parser.add_argument("prefix", type=Path)
     parser.add_argument("payload", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("overlay", type=Path, nargs="?")
     args = parser.parse_args()
     payload = args.payload.read_bytes()
     result = attach(args.prefix.read_bytes(), payload)
+    if args.overlay is not None:
+        overlay = args.overlay.read_bytes()
+        if len(overlay) != 11144:
+            raise ValueError("Stage-5 overlay must contain four 2786-byte images")
+        result += overlay
     args.output.write_bytes(result)
     print(
         f"created {args.output}: {len(result)} bytes "
-        f"({len(payload)} trailing)"
+        f"({len(result) - len(args.prefix.read_bytes())} trailing)"
     )
 
 

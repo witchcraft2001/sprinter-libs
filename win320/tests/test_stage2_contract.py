@@ -79,9 +79,12 @@ class Stage2ContractTests(unittest.TestCase):
         self.assertIn("call s4_validate_window_focus", header)
         self.assertIn("s2_window_ptr", header)
         self.assertIn("WIN_IT_FOCUSABLE", item)
-        self.assertIn("WIN_T_ICON", item)
-        self.assertIn("WIN_T_EDIT", item)
-        self.assertIn("WIN_T_ZONE", item)
+        self.assertIn("cp WIN_T_ZONE+1", item)
+        dispatch = STAGE2.split(".dispatch:", 1)[1].split(
+            "s2_process_label:", 1
+        )[0]
+        for control in ("WIN_T_ICON", "WIN_T_PROGRESS", "WIN_T_SCROLLBAR", "WIN_T_LISTBOX"):
+            self.assertIn(control, dispatch)
 
     def test_backstore_row_has_one_mapping_and_256_plus_remainder_copy(self) -> None:
         row = STAGE2.split("s2_copy_stack_rect:", 1)[1].split(

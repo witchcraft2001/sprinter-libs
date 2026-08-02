@@ -240,6 +240,82 @@ WIN_ED_ESC               equ 1
 WIN_ED_TAB               equ 2
 WIN_ED_MOUSE             equ 3
 
+; WinIcon (12 bytes).
+WIN_ICON_SIZE            equ 12
+WIN_ICO_X                equ 0
+WIN_ICO_Y                equ 2
+WIN_ICO_WIDTH            equ 4
+WIN_ICO_HEIGHT           equ 6
+WIN_ICO_FLAGS            equ 8
+WIN_ICO_PAGE             equ 9
+WIN_ICO_SLOT             equ 10
+WIN_ICO_RESERVED         equ 11
+WIN_ICO_KEYED            equ #01
+
+; WinProgress (12 bytes).
+WIN_PROGRESS_SIZE        equ 12
+WIN_PG_X                 equ 0
+WIN_PG_Y                 equ 2
+WIN_PG_WIDTH             equ 4
+WIN_PG_HEIGHT            equ 6
+WIN_PG_FLAGS             equ 8
+WIN_PG_PERCENT           equ 9
+WIN_PG_LAST_PX           equ 10
+WIN_PG_FRAME             equ #01
+
+; WinScrollbar (22 bytes).
+WIN_SCROLLBAR_SIZE       equ 22
+WIN_SB_X                 equ 0
+WIN_SB_Y                 equ 2
+WIN_SB_WIDTH             equ 4
+WIN_SB_HEIGHT            equ 6
+WIN_SB_VISIBLE           equ 8
+WIN_SB_TOTAL             equ 10
+WIN_SB_FIRST             equ 12
+WIN_SB_FLAGS             equ 14
+WIN_SB_RESERVED          equ 15
+WIN_SB_THUMB_POS         equ 16
+WIN_SB_THUMB_LEN         equ 18
+WIN_SB_LAST_POS          equ 20
+WIN_SB_HORIZONTAL        equ #01
+WIN_SB_ARROWS            equ #02
+WIN_SB_MIN_THUMB         equ 4
+
+WIN_SB_PART_BACK         equ 1
+WIN_SB_PART_FORWARD      equ 2
+WIN_SB_PART_PAGE_BACK    equ 3
+WIN_SB_PART_PAGE_FORWARD equ 4
+WIN_SB_PART_THUMB        equ 5
+
+; WinTextRef (3 bytes) and WinListbox (28 bytes).
+WIN_TEXT_REF_SIZE        equ 3
+WIN_TXR_PAGE             equ 0
+WIN_TXR_OFFSET           equ 1
+
+WIN_LISTBOX_SIZE         equ 28
+WIN_LB_X                 equ 0
+WIN_LB_Y                 equ 2
+WIN_LB_WIDTH             equ 4
+WIN_LB_HEIGHT            equ 6
+WIN_LB_ITEM_HEIGHT       equ 8
+WIN_LB_ATTR_NORMAL       equ 9
+WIN_LB_ATTR_CURSOR       equ 10
+WIN_LB_FLAGS             equ 11
+WIN_LB_TOTAL             equ 12
+WIN_LB_FIRST             equ 14
+WIN_LB_CURSOR            equ 16
+WIN_LB_ITEMS             equ 18
+WIN_LB_ITEMS_PAGE        equ 20
+WIN_LB_RESERVED          equ 21
+WIN_LB_SCROLLBAR         equ 22
+WIN_LB_LAST_FIRST        equ 24
+WIN_LB_LAST_CURSOR       equ 26
+WIN_LB_FRAME             equ #01
+WIN_LB_NOCURSOR          equ #02
+WIN_LB_FOCUS             equ #04
+WIN_LB_PAGED             equ #08
+WIN_LB_PART_ROW          equ 1
+
 WIN_BACKSTORE_MAX_PAGES  equ 4
 WIN_BACKSTORE_MAX_DEPTH  equ 4
 WIN_BACKSTORE_CHUNK      equ 256

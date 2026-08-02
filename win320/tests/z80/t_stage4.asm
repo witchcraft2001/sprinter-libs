@@ -175,6 +175,8 @@ win_test_dss_call:
         jr z,.getmem
         cp DSS_FREEMEM
         jr z,.freemem
+        cp #33
+        jr z,.ctrlkey
         cp #31
         jr z,.scankey
         xor a
@@ -196,6 +198,28 @@ win_test_dss_call:
         ret
 .freemem:
         xor a
+        ret
+.ctrlkey:
+        ld a,(mock_key_after_click)
+        or a
+        jr z,.ctrl_delay
+        ld a,(s4_test_mouse_hits)
+        or a
+        ret z
+.ctrl_delay:
+        ld hl,mock_key_delay
+        ld a,(hl)
+        or a
+        jr z,.ctrl_ready
+        dec (hl)
+        xor a
+        ret
+.ctrl_ready:
+        ld a,(mock_key_count)
+        or a
+        ret z
+        ld a,#ff
+        or a
         ret
 .scankey:
         ld a,(mock_key_after_click)
@@ -319,6 +343,9 @@ start:
         call test_caret_blink
         call test_mouse_cursor
         call test_error_consistency
+        ifdef WIN320_STAGE5_TEST
+        call test_stage5
+        endif
         call t_end
         halt
 
@@ -494,11 +521,35 @@ test_focus:
         ld a,40
         call t_expect_z
         ld hl,(focus_track+WIN_TRK_ITEM)
-        ld de,focus_items+2*WIN_ITEM_SIZE
-        or a
-        sbc hl,de
+        ld a,h
+        or l
         ld a,41
         call t_expect_z
+
+        ; Navigation keys have ASCII=0.  They are not button activations and
+        ; must survive the focus layer as ordinary WIN_EV_KEY events.
+        ld a,WIN_TRK_ANY_KEY|WIN_TRK_TAB_FOCUS
+        ld (focus_track+WIN_TRK_OPTIONS),a
+        ld hl,keys_arrow_up
+        ld a,1
+        call set_keys
+        ld de,focus_track
+        call win_poll
+        ld a,d
+        cp WIN_EV_KEY
+        ld a,127
+        call t_expect_z
+        ld a,(focus_track+WIN_TRK_KEY_ASCII)
+        or a
+        ld a,128
+        call t_expect_z
+        ld a,(focus_track+WIN_TRK_KEY_SCAN)
+        and #7f
+        cp #58
+        ld a,129
+        call t_expect_z
+        ld a,WIN_TRK_TAB_FOCUS
+        ld (focus_track+WIN_TRK_OPTIONS),a
 
         ld hl,keys_shift_tab
         ld a,1
@@ -928,7 +979,8 @@ test_mouse_cursor:
 
         ; window.x 20 + edit.x 8 + framed content inset 2, then the full
         ; proportional width of 'a': the exact boundary before 'b'.
-        ld a,(font_width_cache+'a')
+        ld a,'a'
+        call s1_cached_width
         ld l,a
         ld h,0
         ld de,30
@@ -1061,6 +1113,7 @@ compare_bytes:
 keys_tab:               db #09,#0f,0
 keys_shift_tab:         db #09,#0f,#80
 keys_enter:             db #0d,#28,0
+keys_arrow_up:          db 0,#58,0
 keys_space:             db #20,#39,0
 keys_edit_accept:       db 0,S4_SCAN_LEFT,0, 'X',#2d,0, #0d,#28,0
 keys_edit_escape:       db 'Z',#2a,0, #1b,#01,0
