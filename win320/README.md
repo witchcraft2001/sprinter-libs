@@ -32,6 +32,18 @@ stack, and descriptors in WIN0–WIN2. The library does not select DSS mode
 The default font is already stored as the first trailing payload of
 `WIN320.DLL`. No separate font file is required.
 
+## Bindings and examples
+
+`bind/win320.h` and `bind/win320.lib` provide the SDCC ABI wrapper;
+`bind/WIN320.INC` provides the Turbo Pascal records and `LibCall` helpers.
+The application supplies the SDCC `win320_libman_call` shim because libman
+ownership belongs to the host. `examples/dialog.asm`, `dialog.c`, and
+`DIALOG.PAS` describe the same window and demonstrate direct rendering,
+declarative controls, dirty updates, a listbox/scrollbar pair, and polling.
+
+`make bindings` compiles the SDCC wrapper, while `make examples` assembles the
+ASM example and compile-checks the C example.
+
 ## Icon packs
 
 `tools/winiconpack.py` accepts indexed PNG/BMP files and row-major sprite
@@ -62,20 +74,26 @@ make host-test
 make z80-test
 make verify
 make inspect
+make benchmark
 make release
 ```
 
-`release` updates the tracked `WIN320.DLL`, visual `WIN320.EXE`, and its
-`ICONS.WIP` asset. Copy all three files into the same target directory.
+`make benchmark` builds `build/WINBENCH.EXE`; see [BENCHMARK.md](BENCHMARK.md)
+for the five hardware timing batches and how to record their result bars.
+
+`release` updates the tracked `WIN320.DLL`, visual `WIN320.EXE`, its
+`ICONS.WIP` asset, and `bind/win320.lib`. Copy the runtime files into the same
+target directory.
 `WIN320.EXE` enters mode `#81` and walks through the primitive screens plus
 Stage-2 declarative drawing, dirty updates, and nested modal restoration on
 both buffers, Stage-3 event tracking, and Stage-4 ASCIIZ/Pascal editing and
 keyboard focus on both screens. Its final Stage-5 screen loads `ICONS.WIP`
 from beside the EXE into application-owned EMM pages, draws keyed 8×8/16×16
 icons, animates progress in both directions, moves the listbox cursor, and
-scrolls the linked scrollbar without reinitializing it. A separate Stage-6
-screen shows an enabled and disabled checkbox plus two radio groups and a live
-state line; exercise it with mouse, Tab/Shift+Tab, Space, and arrow keys.
+scrolls the linked scrollbar without reinitializing it. The Stage-6 screen is
+repeated on both video buffers and shows an enabled and disabled checkbox plus
+two radio groups and a live state line; exercise it with mouse, Tab/Shift+Tab,
+Space, and arrow keys.
 
 On each Stage-4 screen, edit the field and use Enter to accept or Esc to
 restore it. Ctrl+Left/Right moves between words using the same separators as

@@ -91,6 +91,13 @@ start:
         call allocate_backstore
         jp nz,api_failed
 
+        ifdef WIN320_BENCH
+        call win_benchmark_run
+        jp nz,api_failed
+        call wait_step
+        jp success
+        endif
+
         ; Development shortcut for focused MAME visual/input regression runs.
         ifdef WIN320_STAGE5_ONLY
         ld a,7
@@ -175,6 +182,10 @@ start:
 
         ld a,8
         ld (test_stage),a
+        xor a
+        call run_stage6_showcase
+        jp nz,api_failed
+        ld a,1
         call run_stage6_showcase
         jp nz,api_failed
 
@@ -891,11 +902,11 @@ stage5_interact:
         xor a
         ret
 
-; Separate ABI-1.1 screen. WIN320 owns choice state, group selection, focus,
-; cursor-safe redraw and CHANGE publication; the application updates only the
-; compact state label after each real change.
+; Separate ABI-1.1 screen on each video buffer. WIN320 owns choice state,
+; group selection, focus, cursor-safe redraw and CHANGE publication; the
+; application updates only the compact state label after each real change.
 run_stage6_showcase:
-        xor a
+        ld (stage6_screen),a
         call select_target_screen
         ret nz
         ld e,WIN_TXT_ASCIIZ
@@ -931,7 +942,7 @@ run_stage6_showcase:
         ld b,WIN_DRAW
         call call_api
         ret nz
-        xor a
+        ld a,(stage6_screen)
         call show_screen
 
         ld hl,stage6_track+WIN_TRK_STATE
@@ -1016,6 +1027,284 @@ stage6_write_status:
 .view:
         ld (str_stage6_status+23),a
         ret
+
+stage6_screen:          db 0
+
+        ifdef WIN320_BENCH
+; Hardware timing harness. CTC channels 2/3 form an exact 500-Hz source from
+; the fixed 7-MHz clock. Results are batches measured through the public ABI;
+; one result tick is rendered as two pixels, so bar width equals milliseconds.
+WIN_BENCH_CTC_CH0       equ #10
+WIN_BENCH_CTC_CH2       equ #12
+WIN_BENCH_CTC_CH3       equ #13
+
+win_benchmark_run:
+        xor a
+        call select_target_screen
+        ret nz
+        ld e,WIN_TXT_ASCIIZ
+        ld b,WIN_SET_TEXT_FORMAT
+        call call_api
+        ret nz
+        ld de,0
+        ld b,WIN_SET_THEME
+        call call_api
+        ret nz
+        ld d,#ff
+        ld e,WIN_STYLE_CLEAR
+        ld b,WIN_STYLE
+        call call_api
+        ret nz
+        xor a
+        call show_screen
+
+        call win_benchmark_im2_setup
+
+        ld hl,1
+        ld (win_benchmark_rect+WIN_RC_WIDTH),hl
+        ld a,128
+        call win_benchmark_invert_batch
+        jr nz,.failed
+        ld (win_benchmark_invert1_ticks),hl
+
+        ld hl,8
+        ld (win_benchmark_rect+WIN_RC_WIDTH),hl
+        ld a,128
+        call win_benchmark_invert_batch
+        jr nz,.failed
+        ld (win_benchmark_invert8_ticks),hl
+
+        ld hl,32
+        ld (win_benchmark_rect+WIN_RC_WIDTH),hl
+        ld a,64
+        call win_benchmark_invert_batch
+        jr nz,.failed
+        ld (win_benchmark_invert32_ticks),hl
+
+        ld hl,320
+        ld (win_benchmark_rect+WIN_RC_WIDTH),hl
+        ld a,16
+        call win_benchmark_invert_batch
+        jr nz,.failed
+        ld (win_benchmark_invert320_ticks),hl
+
+        ld a,4
+        call win_benchmark_backstore_batch
+        jr nz,.failed
+        ld (win_benchmark_backstore_ticks),hl
+
+        call win_benchmark_im2_stop
+        call win_benchmark_draw_results
+        ret
+.failed:
+        push af
+        call win_benchmark_im2_stop
+        pop af
+        or a
+        ret
+
+; A=iterations, returns HL=elapsed 2-ms ticks or A!=0.
+win_benchmark_invert_batch:
+        ld (win_benchmark_loops),a
+        call win_benchmark_start
+.loop:
+        ld de,win_benchmark_rect
+        ld b,WIN_INVERT_RECT
+        call call_api
+        ret nz
+        call win_benchmark_dec_loop
+        jr nz,.loop
+        call win_benchmark_stop
+        xor a
+        ret
+
+; A=iterations of save+restore for a 320x64 NOPANEL window.
+win_benchmark_backstore_batch:
+        ld (win_benchmark_loops),a
+        call win_benchmark_start
+.loop:
+        ld de,win_benchmark_window
+        ld b,WIN_OPEN
+        call call_api
+        ret nz
+        ld b,WIN_CLOSE
+        call call_api
+        ret nz
+        call win_benchmark_dec_loop
+        jr nz,.loop
+        call win_benchmark_stop
+        xor a
+        ret
+
+win_benchmark_dec_loop:
+        ld a,(win_benchmark_loops)
+        dec a
+        ld (win_benchmark_loops),a
+        ret
+
+win_benchmark_start:
+        call win_benchmark_wait_tick
+        ld hl,(win_benchmark_counter)
+        ld (win_benchmark_started),hl
+        ret
+
+win_benchmark_stop:
+        ld hl,(win_benchmark_counter)
+        ld de,(win_benchmark_started)
+        or a
+        sbc hl,de
+        ret
+
+win_benchmark_wait_tick:
+        ld hl,(win_benchmark_counter)
+.wait:
+        halt
+        ld de,(win_benchmark_counter)
+        ld a,h
+        cp d
+        jr nz,.changed
+        ld a,l
+        cp e
+        jr z,.wait
+.changed:
+        ret
+
+win_benchmark_im2_setup:
+        di
+        ld hl,win_benchmark_im2_table
+        ld de,win_benchmark_im2_empty
+        ld b,128
+.fill:
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        inc hl
+        djnz .fill
+        ld hl,win_benchmark_im2_handler
+        ld (win_benchmark_im2_table+6),hl
+        ld hl,win_benchmark_im2_empty
+        ld (win_benchmark_im2_table+#ff),hl
+        ld a,i
+        ld (win_benchmark_saved_i),a
+        ld a,high win_benchmark_im2_table
+        ld i,a
+        im 2
+        ld a,#57
+        out (WIN_BENCH_CTC_CH2),a
+        ld a,112
+        out (WIN_BENCH_CTC_CH2),a
+        ld a,#d7
+        out (WIN_BENCH_CTC_CH3),a
+        ld a,125
+        out (WIN_BENCH_CTC_CH3),a
+        xor a
+        out (WIN_BENCH_CTC_CH0),a
+        ld (win_benchmark_counter),a
+        ld (win_benchmark_counter+1),a
+        ei
+        ret
+
+win_benchmark_im2_stop:
+        di
+        ld a,3
+        out (WIN_BENCH_CTC_CH2),a
+        out (WIN_BENCH_CTC_CH3),a
+        ld a,(win_benchmark_saved_i)
+        ld i,a
+        im 1
+        ei
+        ret
+
+win_benchmark_im2_handler:
+        push af
+        push hl
+        ld hl,win_benchmark_counter
+        inc (hl)
+        jr nz,.done
+        inc hl
+        inc (hl)
+.done:
+        pop hl
+        pop af
+        ei
+        reti
+
+win_benchmark_im2_empty:
+        ei
+        reti
+
+win_benchmark_draw_results:
+        ld hl,win_benchmark_invert1_ticks
+        ld de,24
+        ld a,4
+        call win_benchmark_bar
+        ret nz
+        ld hl,win_benchmark_invert8_ticks
+        ld de,48
+        ld a,2
+        call win_benchmark_bar
+        ret nz
+        ld hl,win_benchmark_invert32_ticks
+        ld de,72
+        ld a,3
+        call win_benchmark_bar
+        ret nz
+        ld hl,win_benchmark_invert320_ticks
+        ld de,96
+        ld a,6
+        call win_benchmark_bar
+        ret nz
+        ld hl,win_benchmark_backstore_ticks
+        ld de,120
+        ld a,5
+        jp win_benchmark_bar
+
+; HL=&ticks, DE=y, A=colour. Width is ticks*2, clamped to 320 pixels.
+win_benchmark_bar:
+        ld (win_benchmark_bar_rect+WIN_RC_Y),de
+        ld (win_benchmark_bar_rect+WIN_RC_COLOR),a
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ex de,hl
+        add hl,hl
+        ld de,321
+        or a
+        sbc hl,de
+        add hl,de
+        jr c,.width_ready
+        ld hl,320
+.width_ready:
+        ld (win_benchmark_bar_rect+WIN_RC_WIDTH),hl
+        ld de,win_benchmark_bar_rect
+        ld b,WIN_FILL_RECT
+        jp call_api
+
+win_benchmark_rect:
+        dw 0,8,1,1
+        db #ff,0
+win_benchmark_bar_rect:
+        dw 0,24,0,8
+        db 4,0
+win_benchmark_window:
+        dw 0,160,320,64
+        db #ff,WIN_WND_NOPANEL,0,#ff
+        dw 0
+        db #ff,0
+
+win_benchmark_counter:          dw 0
+win_benchmark_started:          dw 0
+win_benchmark_invert1_ticks:    dw 0
+win_benchmark_invert8_ticks:    dw 0
+win_benchmark_invert32_ticks:   dw 0
+win_benchmark_invert320_ticks:  dw 0
+win_benchmark_backstore_ticks:  dw 0
+win_benchmark_loops:            db 0
+win_benchmark_saved_i:          db 0
+
+        align 256
+win_benchmark_im2_table:        ds 257
+        endif
 
 ; Load the two payload pages of ICONS.WIP into application-owned EMM.
 load_icon_pack:

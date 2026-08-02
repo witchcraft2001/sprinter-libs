@@ -2353,6 +2353,12 @@ cleanup библиотека временно выбирает рабочие о
   `win_invert_rect`;
 - биндинги и примеры (§21), финальная документация, `make release`.
 
+Измерительный harness собирается командой `make benchmark` в
+`build/WINBENCH.EXE`; формат пяти полос и порядок фиксации аппаратных
+результатов описаны в `BENCHMARK.md`. До получения замеров с реального
+Sprinter значение `WIN_DI_BUDGET_US=200` остаётся консервативным значением по
+умолчанию, а порог CPU/FN_ACC не фиксируется по результатам одного эмулятора.
+
 Фиксация ABI: после этапа 1 — коды ошибок, формат шрифтового блока,
 `WinTheme`, цветовая модель, `WinRect/WinLabel/WinButton`; после
 этапа 3 — `WinWindow`, `WinItem`, `WinKey`, `WinTrack`, события
@@ -2455,8 +2461,8 @@ Host-проверки (по образцу gfx320):
 ## 21. Поставка и биндинги
 
 Библиотека рассчитана на три клиентских языка, представленных в экосистеме
-Sprinter. ABI 1.1 стабилизируется сначала в нормативном asm-include;
-обновление C/Pascal bindings отложено до следующего этапа стабилизации:
+Sprinter. ABI 1.1 зафиксирован нормативным asm-include; SDCC и Turbo Pascal
+bindings повторяют те же packed-layout и номера entry:
 
 ```text
 win320/WIN320.DLL         ; готовая release-сборка, хранится в репозитории
@@ -2464,8 +2470,10 @@ win320/WIN320.EXE         ; визуальный тест для железа/э
 win320/ICONS.WIP          ; release-ресурс визуального Stage-5 теста
 win320/specs.md           ; это нормативное описание ABI
 win320/win320.inc          ; sjasmplus: entry, коды ошибок, смещения и размеры
-win320/bind/win320.h       ; последующий этап: SDCC struct + обёртки l_call
-win320/bind/WIN320.INC     ; последующий этап: Turbo Pascal record + LibCall
+win320/bind/win320.h       ; SDCC struct + обёртки l_call
+win320/bind/win320.c       ; реализация SDCC-обёрток
+win320/bind/win320.lib     ; release-библиотека SDCC
+win320/bind/WIN320.INC     ; Turbo Pascal record + LibCall
 win320/examples/dialog.asm ; один и тот же диалог на трёх языках
 win320/examples/dialog.c
 win320/examples/DIALOG.PAS

@@ -190,13 +190,20 @@ class Stage6ContractTests(unittest.TestCase):
 
     def test_visual_showcase_has_two_groups_disabled_and_live_state(self) -> None:
         visual = (ROOT / "test.asm").read_text()
-        self.assertIn("call run_stage6_showcase", visual)
+        stage6_calls = visual.split("run_stage6_showcase:", 1)[0]
+        self.assertIn(
+            "xor a\n        call run_stage6_showcase", stage6_calls
+        )
+        self.assertIn(
+            "ld a,1\n        call run_stage6_showcase", stage6_calls
+        )
         showcase = visual.split("run_stage6_showcase:", 1)[1].split(
             "; Load the two payload pages", 1
         )[0]
         for token in (
             "WIN_EV_CHANGE", "stage6_write_status",
             "WIN_UPDATE", "WIN_TRACK", "WIN_CH_DISABLED",
+            "ld (stage6_screen),a", "ld a,(stage6_screen)",
         ):
             self.assertIn(token, showcase)
         self.assertIn(

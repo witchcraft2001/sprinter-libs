@@ -222,6 +222,12 @@ WIN_EV_CHANGE            equ 10
 WIN_REPEAT_DELAY         equ 12
 WIN_REPEAT_RATE          equ 3
 
+; Default upper bound for ordinary drawing DI sections. Backstore row copies
+; are measured separately because a complete 256-byte row chunk is atomic.
+        ifndef WIN_DI_BUDGET_US
+WIN_DI_BUDGET_US         equ 200
+        endif
+
 ; WinEdit (16 bytes).
 WIN_EDIT_SIZE            equ 16
 WIN_ED_X                 equ 0
