@@ -1,0 +1,15 @@
+; AFNT640.DLL public ABI 1.5 constants for sjasmplus clients.
+AFNT640_INIT          equ 0
+AFNT640_FREE          equ 1
+AFNT640_FNSTYLE       equ 2
+AFNT640_APRINT        equ 3
+AFNT640_SET_WINDOW    equ 4
+AFNT640_SET_TARGET    equ 5
+
+AFNT640_TARGET_BUF0   equ 0
+AFNT640_TARGET_BUF1   equ 1
+AFNT640_TARGET_FRONT  equ 2
+AFNT640_TARGET_BACK   equ 3
+
+AFNT640_ERR_ARGUMENT  equ #10
+AFNT640_ERR_WINDOW    equ #12

@@ -16,7 +16,7 @@ RAW_DLL := $(BUILD)/AFNT320.raw.dll
 TEST_SOURCE := test.asm
 TEST_EXE := $(BUILD)/AFNT320.EXE
 
-.PHONY: all clean inspect verify raw test release
+.PHONY: all clean inspect verify raw test host-test z80-test release
 
 all: $(DLL) $(TEST_EXE)
 
@@ -24,11 +24,12 @@ $(ACCEL_FONT): $(FONT_SOURCE) $(FONT_TOOL)
 	mkdir -p $(BUILD)
 	$(PYTHON) $(FONT_TOOL) $(FONT_SOURCE) $@
 
-$(DLL): $(SOURCE) $(ACCEL_FONT) ../common/fontlayout.inc ../common/textcore320.inc
+$(DLL): $(SOURCE) afnt320.inc $(ACCEL_FONT) ../common/fontlayout.inc \
+	../common/textcore320.inc ../common/afnt_target.inc ../common/afnt_runtime.inc
 	mkdir -p $(BUILD)
 	$(LIBMAN_MKDLL) build $(SOURCE) --format l0 --target 1.2 \
 		--assembler sjasmplus --compress --name "AFNT320 gfx" \
-		--version 1.4 --date $(BUILD_DATE) -o $@
+		--version 1.5 --date $(BUILD_DATE) -o $@
 
 inspect: $(DLL)
 	$(LIBMAN_MKDLL) inspect $(DLL)
@@ -36,7 +37,7 @@ inspect: $(DLL)
 verify: $(DLL)
 	$(LIBMAN_MKDLL) verify $(DLL) --target 1.2
 
-release: all verify
+release: all verify host-test z80-test
 	cp $(DLL) $(RELEASE_DLL)
 
 raw: $(DLL)
@@ -44,11 +45,18 @@ raw: $(DLL)
 
 test: $(TEST_EXE)
 
-$(TEST_EXE): $(TEST_SOURCE) $(DLL) $(LIBMAN_DIR)/libman13.asm
+$(TEST_EXE): $(TEST_SOURCE) afnt320.inc ../common/load_library.inc $(DLL) $(LIBMAN_DIR)/libman13.asm
 	mkdir -p $(BUILD)
 	$(SJASMPLUS) --inc="$(LIBMAN_DIR)" --raw=$@ $(TEST_SOURCE)
+
+host-test: $(DLL)
+	$(PYTHON) -m unittest discover -s tests -v
+
+z80-test: $(DLL)
+	LIBMAN_DIR="$(LIBMAN_DIR)" tools/run_z80_tests.sh
 
 clean:
 	rm -f $(BUILD)/AFNT320.DLL $(BUILD)/AFNT320.raw.dll \
 		$(BUILD)/AFNT320.EXE $(BUILD)/font_accel.bin \
 		$(BUILD)/afnt320.bin $(BUILD)/afnt320.lst $(BUILD)/afnt320.sld
+	rm -f $(BUILD)/z80-tests/*

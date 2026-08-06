@@ -8,8 +8,8 @@
         dw      start, start, #bfff
         ds      490
 
-AFNT320_FNSTYLE        equ     2
-AFNT320_APRINT         equ     3
+        include "afnt320.inc"
+
 DSS_APPINFO            equ     #47
 APPINFO_EXE_HOMEDIR    equ     1
 
@@ -33,45 +33,70 @@ start:
         ld      bc,#0050        ; 320x256x256
         ld      a,#81           ; DSS_VMOD_G320 (gfxview mode)
         rst     #10
-        ld      hl,(handle)
-        ld      b,AFNT320_FNSTYLE
-        call    LIBMAN.l_call
+        ld      e,AFNT320_TARGET_BUF0
+        call    select_and_style
         jp      c,restore_and_fail
-
-        ld      de,title
+        ld      de,buf0_text
         ld      ix,#0010
         ld      iy,#0000
         ld      a,#1f
         call    print
-        ld      de,info+16
+
+        ld      e,AFNT320_TARGET_BUF1
+        call    select_and_style
+        jp      c,restore_and_fail
+        ld      de,buf1_text
         ld      ix,#0010
-        ld      iy,#0010
-        ld      a,#70
+        ld      iy,#0000
+        ld      a,#2f
         call    print
 
-        ld      hl,lines
-        ld      iy,#0028
-.next_line:
-        ld      e,(hl)
-        inc     hl
-        ld      d,(hl)
-        inc     hl
-        ld      a,d
-        or      e
-        jr      z,.done
-        ld      a,(hl)
-        inc     hl
-        push    hl
+        ld      e,AFNT320_TARGET_FRONT
+        call    select_target
+        jp      c,restore_and_fail
+        ld      de,front_before
         ld      ix,#0010
+        ld      iy,#0020
+        ld      a,#0e
         call    print
-        pop     hl
-        ld      de,#0010
-        add     iy,de
-        jr      .next_line
-.done:
-        ld      hl,prompt
-        ld      c,#5c
+
+        ld      e,AFNT320_TARGET_BACK
+        call    select_target
+        jp      c,restore_and_fail
+        ld      de,back_before
+        ld      ix,#0010
+        ld      iy,#0030
+        ld      a,#0a
+        call    print
+
+        in      a,(#c9)
+        xor     1
+        out     (#c9),a
+
+        ld      e,AFNT320_TARGET_FRONT
+        call    select_target
+        jp      c,restore_and_fail
+        ld      de,front_after
+        ld      ix,#0010
+        ld      iy,#0050
+        ld      a,#0d
+        call    print
+
+        ld      e,AFNT320_TARGET_BACK
+        call    select_target
+        jp      c,restore_and_fail
+        ld      de,back_after
+        ld      ix,#0010
+        ld      iy,#0060
+        ld      a,#0b
+        call    print
+
+        ; Inspect the current buffer, then the other physical buffer.
+        ld      c,#30
         rst     #10
+        in      a,(#c9)
+        xor     1
+        out     (#c9),a
         ld      c,#30
         rst     #10
 
@@ -116,6 +141,26 @@ print:
         pop     hl
         ret
 
+select_target:
+        ld      hl,(handle)
+        ld      b,AFNT320_SET_TARGET
+        call    LIBMAN.l_call
+        or      a
+        ret     z
+        scf
+        ret
+
+select_and_style:
+        call    select_target
+        ret     c
+        ld      hl,(handle)
+        ld      b,AFNT320_FNSTYLE
+        call    LIBMAN.l_call
+        or      a
+        ret     z
+        scf
+        ret
+
 handle:         dw      0
 old_mode:       db      0
 old_screen:     db      0
@@ -125,7 +170,12 @@ dll_path:       ds      272
 welcome:        db      "AFNT320 visual test",13,10,0
 error_message:  db      "Test setup failed. Put AFNT320.DLL beside this EXE.",13,10,"Press a key.",13,10,0
 prompt:         db      13,10,"Press a key to return to the desktop.",13,10,0
-title:          db      "AFNT320.DLL - 320 x 256 x 256 font test",0
+buf0_text:      db      "BUF0: physical buffer zero; palette and clear are local",0
+buf1_text:      db      "BUF1: physical buffer one; palette and clear are local",0
+front_before:   db      "FRONT before RGMOD flip",0
+back_before:    db      "BACK before RGMOD flip",0
+front_after:    db      "FRONT after RGMOD flip",0
+back_after:     db      "BACK after RGMOD flip",0
 line1:          db      "The quick brown fox jumps over the lazy dog.",0
 line2:          db      "ABCDEFGHIJKLMNOPQRSTUVWXYZ  0123456789",0
 line3:          db      "abcdefghijklmnopqrstuvwxyz  ! ? . , : ;",0

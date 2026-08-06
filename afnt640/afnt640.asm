@@ -1,8 +1,8 @@
-; AFNT640 - L0 DLL for Sprinter libman 1.2/1.3
+; AFNT640 - L0 DLL for Sprinter libman 1.2/1.3, ABI 1.5
 ;
 ; The public entry points intentionally keep the historical ANTONFNT ABI and
 ; add one optional video-window selector:
-;   0 init, 1 free, 2 fnstyle, 3 aprint, 4 set_window.
+;   0 init, 1 free, 2 fnstyle, 3 aprint, 4 set_window, 5 set_target.
 ; aprint receives DE=text (ASCIIZ), IX=x, IY=y and A=BG<<4|FG.
 ;
 ; This variant is fixed to 640x256x16 (the original ANTONFNT renderer), so
@@ -14,16 +14,19 @@
 ; Build with sprinter-mkdll and sjasmplus (see Makefile).  The L0 header is
 ; deliberately kept in the source so old libman loaders can relocate it.
 
+			IFNDEF	AFNT_TEST_BUILD
 			ORG	0x0000
+			ENDIF
+			INCLUDE	"afnt640.inc"
 
 			DB	"L0"
 			DW	0			; loaded size (filled by sprinter-mkdll)
 			DW	0			; uncompressed code size
 			DW	0			; relocation bitmap size
 			DW	0			; checksum
-			DB	28,7			; build date: 28-Jul
+			DB	6,8			; source build date: 06-Aug
 			DW	2026
-			DW	0x0104			; v1.4
+			DW	0x0105			; v1.5
 			DB	"AFNT640 gfx lib",0
 
 			JP	init
@@ -31,13 +34,19 @@
 			JP	fnstyle
 			JP	aprint
 			JP	set_window
+			JP	afnt_set_target
 
 VIDEO_PAGE	EQU	0x50
 PAGE_PORT_BASE	EQU	0x82		; WIN0; WINn page port = base + n*0x20
 DEFAULT_WINDOW	EQU	1
 YPORT		EQU	0x89
+RGMOD		EQU	0xC9
 DSS_GETVMOD	EQU	0x51
 SCREEN_STRIDE	EQU	0x0140		; BIOS PIC_FN2 second-screen offset
+TARGET_FRONT	EQU	AFNT640_TARGET_FRONT
+TARGET_BACK	EQU	AFNT640_TARGET_BACK
+ERR_ARGUMENT	EQU	AFNT640_ERR_ARGUMENT
+ERR_WINDOW	EQU	AFNT640_ERR_WINDOW
 
 ; ---------------------------------------------------------------------------
 ; libman entry points
@@ -60,6 +69,8 @@ init:
 			CALL	configure_window
 			XOR	A
 			LD	(screen_id),A
+			LD	(target_selector),A
+			LD	(target_explicit),A
 			LD	(color_valid),A
 			RET
 
@@ -70,9 +81,12 @@ free:
 ; the currently selected graphic screen.  A is accepted for ABI compatibility;
 ; the historical library always cleared with colour 0.
 fnstyle:
-			CALL	ensure_window_safe
+			CALL	afnt_ensure_window_safe
 			JR	C,fnstyle_window_error
-			CALL	capture_screen
+			LD	A,(target_explicit)
+			OR	A
+			CALL	Z,capture_screen
+			CALL	afnt_resolve_target
 			CALL	clear_screen_640
 			CALL	load_palette
 			XOR	A
@@ -86,8 +100,9 @@ fnstyle_window_error:
 ; DSS call is made while printing a line.
 aprint:
 			LD	(print_color),A
-			CALL	ensure_window_safe
+			CALL	afnt_ensure_window_safe
 			JR	C,aprint_window_error
+			CALL	afnt_resolve_target
 			EX	DE,HL			; HL = text
 			PUSH	IX
 			POP	DE			; DE = x
@@ -113,17 +128,26 @@ aprint_window_error:
 set_window:
 			LD	A,E
 			CP	4
-			JR	NC,set_window_error
+			JR	NC,set_window_argument_error
 			LD	B,A
 			LD	A,(code_window)
 			CP	B
-			JR	Z,set_window_error
+			JR	Z,set_window_conflict
+			CALL	afnt_current_stack_window
+			CP	B
+			JR	Z,set_window_conflict
 			LD	A,B
 			CALL	configure_window
 			LD	A,(video_window)
 			RET
 
-set_window_error:
+set_window_argument_error:
+			LD	A,ERR_ARGUMENT
+			SCF
+			RET
+
+set_window_conflict:
+			LD	A,ERR_WINDOW
 			SCF
 			RET
 
@@ -159,32 +183,15 @@ capture_screen:
 			LD	C,DSS_GETVMOD
 			RST	0x10
 			LD	A,B
+			AND	1
 			LD	(screen_id),A
-			RET
-
-; Return carry if the configured VRAM window is the window containing this
-; relocated DLL.  BC is preserved because callers may be holding a text
-; pointer or loop counter there.
-ensure_window_safe:
-			PUSH	BC
-			LD	A,(video_window)
-			LD	B,A
-			LD	A,(code_window)
-			CP	B
-			JR	Z,ensure_window_conflict
-			POP	BC
-			XOR	A
-			RET
-
-ensure_window_conflict:
-			POP	BC
-			SCF
 			RET
 
 read_page:
 			PUSH	BC
 			LD	A,(page_port)
 			LD	C,A
+read_page_input:
 			IN	A,(C)
 			POP	BC
 			RET
@@ -216,7 +223,7 @@ select_video_page:
 
 ; Clear all 320 byte-columns with one 256-pixel vertical fill each.
 clear_screen_640:
-			DI
+			CALL	afnt_enter_di
 			CALL	read_page
 			LD	(saved_page),A
 			CALL	select_video_page
@@ -248,7 +255,7 @@ clear_screen_640_column:
 			CALL	write_page
 			LD	A,0xC0
 			OUT	(YPORT),A
-			EI
+			CALL	afnt_leave_di
 			RET
 
 ; ---------------------------------------------------------------------------
@@ -259,6 +266,7 @@ clear_screen_640_column:
 text_out_640:
 			PUSH	IY
 			LD	B,A
+			CALL	afnt_enter_di
 			LD	A,C
 			LD	(y_pos),A
 			CALL	read_page
@@ -309,10 +317,9 @@ text_out_640_dispatch_ready:
 			INC	A
 text_out_640_page_mode_ready:
 			LD	(map_per_char),A
+			LD	A,(map_per_char)
 			OR	A
 			CALL	Z,select_video_page
-
-			DI
 			; Exact accelerator setup from ANTONFNT_OLD_DISASM.Z80:
 			; block size 8, then leave the accelerator idle until COPY.
 			LD	D,D
@@ -406,13 +413,13 @@ text_out_640_next_char:
 
 text_out_640_exit:
 			LD	B,B
-			EI
 			LD	L,C
 			LD	H,B
 			LD	A,0xC0
 			OUT	(YPORT),A
 			LD	A,(saved_page)
 			CALL	write_page
+			CALL	afnt_leave_di
 			POP	IY
 			RET
 
@@ -486,7 +493,10 @@ page_port:	DB	0xA2
 page_latch:	DB	0
 vram_base:	DW	0x4000
 screen_id:	DB	0
+target_selector: DB	AFNT640_TARGET_BUF0
+target_explicit: DB	0
 saved_page:	DB	0
+restore_ei:	DB	0
 y_pos:		DB	0
 print_color:	DB	0
 fg_pattern:	DB	0
@@ -501,6 +511,9 @@ glyph_ptr:	DW	0
 
 foreground_buffer:	DS	8,0
 background_buffer:	DS	8,0
+
+			INCLUDE	"../common/afnt_target.inc"
+			INCLUDE	"../common/afnt_runtime.inc"
 
 ; EGA-compatible palette, four bytes per entry (B,G,R,Y).
 custom_palette:

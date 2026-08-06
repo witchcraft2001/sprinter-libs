@@ -1,0 +1,15 @@
+; AFNT320.DLL public ABI 1.5 constants for sjasmplus clients.
+AFNT320_INIT          equ 0
+AFNT320_FREE          equ 1
+AFNT320_FNSTYLE       equ 2
+AFNT320_APRINT        equ 3
+AFNT320_SET_WINDOW    equ 4
+AFNT320_SET_TARGET    equ 5
+
+AFNT320_TARGET_BUF0   equ 0
+AFNT320_TARGET_BUF1   equ 1
+AFNT320_TARGET_FRONT  equ 2
+AFNT320_TARGET_BACK   equ 3
+
+AFNT320_ERR_ARGUMENT  equ #10
+AFNT320_ERR_WINDOW    equ #12
