@@ -1,13 +1,16 @@
-; GFX320.DLL — accelerated graphics and 16x16 row-major tiles for mode #81.
+; GFX640.DLL — accelerated packed-4bpp graphics and 16x32 row-major tiles
+; for DSS mode #82. Screen coordinates are always expressed in pixels;
+; accelerator and VRAM addresses are expressed in packed bytes.
 ; Public ABI is described in specs.md.
 
         ; Production DLLs are linked at zero and relocated by libman.  The
         ; override lets the Z80 harness execute the same source at each real
         ; 16-KiB window address without maintaining a second test-only copy.
-        ifndef GFX320_TEST_BUILD
+        ifndef GFX640_TEST_BUILD
         org 0
         endif
 
+gfx_image_start:
         db "L0"
         dw 0,0,0,0
         db 28,7
@@ -15,7 +18,7 @@
         dw #0100
         ; L0 dispatch table is fixed at #0020.  Header prefix is 16 bytes,
         ; therefore the encoded name field must occupy exactly 16 bytes.
-        db "GFX320 graphics",0
+        db "GFX640 graphics",0
 
         assert ($ & #ff) == #20
 
@@ -57,7 +60,7 @@
         jp gfx_draw_tile_clip       ; 35
 
 ; constants
-; Keep these values byte-exact with gfx320.inc and specs.md.  #01..#0f are
+; Keep these values byte-exact with gfx640.inc and specs.md.  #01..#0f are
 ; reserved for libman/binding errors, therefore GFX errors start at #10.
 ; For entry >=1 the public status channel is A; CF is intentionally unspecified
 ; because libman l_call replaces it with its own dispatcher status.
@@ -86,7 +89,7 @@ GFX_DI_BUDGET_US equ 200
 
 gfx_init:
         ; Keep the loader hook side-effect free: libman calls entry 0 while
-        ; l_load still owns its mapping state.  The caller selects mode #81
+        ; l_load still owns its mapping state.  The caller selects mode #82
         ; before rendering; drawing never changes the application video mode.
         ; derive own window: (high byte & #c0) rotated to 0..3
         ld hl,gfx_init
@@ -321,7 +324,7 @@ resolve_target:
 
         include "../common/winmgr.inc"
 
-; HL = x, A = y (for the caller's PORT_Y write); outputs CPU VRAM x address.
+; HL = packed byte x, A = y; outputs the CPU VRAM byte address.
 make_dest:
         ld de,(dest_buffer)
         add hl,de
@@ -362,10 +365,13 @@ vfill_size:
         ret
 
 ; ---- MVP accelerated primitives --------------------------------------------
-; A=color, E=destination flags.  Clear uses exactly 320 accelerator V fills.
+; A=color 0..15, E=destination flags. Clear uses 320 accelerator V fills.
 gfx_clear:
+        cp 16
+        jr nc,.bad_color
         bit 3,e
         jr nz,gfx_clear_key
+        call expand_color
         ld (fill_color),a
         ld a,e
         call resolve_target
@@ -380,6 +386,9 @@ gfx_clear:
         call unmap_vram
         call leave_di
         xor a
+        ret
+.bad_color:
+        ld a,ERR_ARGUMENT
         ret
 
 ; Fill the selected mapped buffer with fill_color using exactly 320 vertical
@@ -410,6 +419,51 @@ gfx_clear_key:
         scf
         ret
 
+; A=4-bit color -> A duplicated into both packed nibbles.
+expand_color:
+        ld b,a
+        add a,a
+        add a,a
+        add a,a
+        add a,a
+        or b
+        ret
+
+; A=flags. NZ/ERR_UNSUPPORTED when a solid primitive requests KEY_FF.
+reject_solid_key:
+        bit 3,a
+        jr z,.ok
+        ld a,ERR_UNSUPPORTED
+        or a
+        ret
+.ok:   xor a
+        ret
+
+; Rect coordinates are still pixels. Aligned byte primitives require even
+; x and width and convert them only after all pixel-bound checks succeed.
+validate_rect_alignment:
+        ld a,(rect_x)
+        bit 0,a
+        jr nz,.bad
+        ld a,(rect_w)
+        bit 0,a
+        jr nz,.bad
+        xor a
+        ret
+.bad:  ld a,ERR_ARGUMENT
+        ret
+
+rect_pixels_to_bytes:
+        ld hl,(rect_x)
+        srl h
+        rr l
+        ld (rect_x),hl
+        ld hl,(rect_w)
+        srl h
+        rr l
+        ld (rect_w),hl
+        ret
+
 ; DE -> GfxFillRect: x u16, y u8, w u16, h u16, color, flags, reserved[3].
 gfx_fill_rect:
         ld a,(de)
@@ -434,10 +488,11 @@ gfx_fill_rect:
         ld (rect_h+1),a
         inc de
         ld a,(de)
-        ld (fill_color),a
+        ld (pixel_color),a
         inc de
         ld a,(de)
         ld b,a
+        ld (pixel_flags),a
         inc de
         ld a,(de)
         ld c,a
@@ -449,10 +504,20 @@ gfx_fill_rect:
         ld a,(de)
         or c
         jr nz,.bad_reserved
-        ld a,b
-        bit 3,a
-        jr nz,.key
+        ld a,(pixel_color)
+        cp 16
+        jr nc,.bad_reserved
+        call expand_color
+        ld (fill_color),a
+        ld a,(pixel_flags)
+        call reject_solid_key
+        or a
+        ret nz
+        ld a,(pixel_flags)
         call resolve_target
+        or a
+        ret nz
+        call validate_rect_alignment
         or a
         ret nz
         call rect_is_empty
@@ -461,6 +526,7 @@ gfx_fill_rect:
         call validate_rect
         or a
         ret nz
+        call rect_pixels_to_bytes
         call check_vram_window
         or a
         ret nz
@@ -473,15 +539,15 @@ gfx_fill_rect:
         ret
 .empty: xor a
         ret
-.key:   ld a,ERR_UNSUPPORTED
-        scf
-        ret
 .bad_reserved:
         ld a,ERR_ARGUMENT
         ret
 
-; IX=x, IYH=0, IYL=y, DE: low 9 bits length, high nibble flags, A=color.
+; IX=x, IYH=0, IYL=y, DE: low 10 bits length, bits 10..13 flags.
 gfx_hline:
+        cp 16
+        jr nc,.bad
+        call expand_color
         ld (fill_color),a
         ld a,iyh
         or a
@@ -492,19 +558,26 @@ gfx_hline:
         ld a,e
         ld (rect_w),a
         ld a,d
-        and 1
+        and 3
         ld (rect_w+1),a
         ld hl,1
         ld (rect_h),hl
         ld a,d
-        and #e0
+        and #c0
         jr nz,.bad
         ld a,d
-        and #1e
+        and #3c
         rrca
-        bit 3,a
-        jr nz,.key
+        rrca
+        ld b,a
+        call reject_solid_key
+        or a
+        ret nz
+        ld a,b
         call resolve_target
+        or a
+        ret nz
+        call validate_rect_alignment
         or a
         ret nz
         call rect_is_empty
@@ -513,6 +586,7 @@ gfx_hline:
         call validate_rect
         or a
         ret nz
+        call rect_pixels_to_bytes
         call check_vram_window
         or a
         ret nz
@@ -525,13 +599,13 @@ gfx_hline:
         ret
 .empty: xor a
         ret
-.key:   ld a,ERR_UNSUPPORTED
-        ret
 .bad:   ld a,ERR_ARGUMENT
         ret
 
-; IX=x, IYH=0, IYL=y, DE: low 9 bits length, high nibble flags, A=color.
+; IX=x, IYH=0, IYL=y, DE: low 10 bits length, bits 10..13 flags.
 gfx_vline:
+        cp 16
+        jr nc,.bad
         ld (fill_color),a
         ld a,iyh
         or a
@@ -544,16 +618,20 @@ gfx_vline:
         ld a,e
         ld (rect_h),a
         ld a,d
-        and 1
+        and 3
         ld (rect_h+1),a
         ld a,d
-        and #e0
+        and #c0
         jr nz,.bad
         ld a,d
-        and #1e
+        and #3c
         rrca
-        bit 3,a
-        jr nz,.key
+        rrca
+        ld b,a
+        call reject_solid_key
+        or a
+        ret nz
+        ld a,b
         call resolve_target
         or a
         ret nz
@@ -568,31 +646,27 @@ gfx_vline:
         ret nz
         call enter_di
         call map_vram
-        ld hl,(rect_x)
-        ld de,(dest_buffer)
-        add hl,de
-        ld de,(vram_base)
-        add hl,de
-        ld a,(rect_h+1)
-        or a
-        jr z,.short
-        ; A high byte can only be 1 for a valid height of 256.
+        ld hl,(rect_h)
+        ld (line_count),hl
         ld a,(rect_y)
-        ld c,0
-        call vfill_chunk
-        jr .done
-.short:
-        ld a,(rect_h)
-        ld c,a
-        ld a,(rect_y)
-        call vfill_chunk
-.done:  call unmap_vram
+        ld (line_y),a
+.loop: ld hl,(rect_x)
+        ld a,(line_y)
+        call pixel_write_mapped
+        ld a,(line_y)
+        inc a
+        ld (line_y),a
+        ld hl,(line_count)
+        dec hl
+        ld (line_count),hl
+        ld a,h
+        or l
+        jr nz,.loop
+        call unmap_vram
         call leave_di
         xor a
         ret
 .empty: xor a
-        ret
-.key:   ld a,ERR_UNSUPPORTED
         ret
 .bad:   ld a,ERR_ARGUMENT
         ret
@@ -601,9 +675,9 @@ validate_rect:
         ld hl,(rect_x)
         ld de,(rect_w)
         add hl,de
-        ld de,321
+        ld de,641
         or a
-        sbc hl,de                 ; x+w <= 320
+        sbc hl,de                 ; x+w <= 640 pixels
         jr nc,.bad
         ld a,(rect_y)
         ld l,a
@@ -617,6 +691,41 @@ validate_rect:
         xor a
         ret
 .bad:   ld a,ERR_ARGUMENT
+        ret
+
+; Write fill_color (0..15) to pixel HL,A in the already mapped target. Reads
+; always come from the DRAM mirror; with VRAM_ONLY this deliberately means a
+; neighbouring VRAM-only nibble can be restored from the mirror.
+pixel_write_mapped:
+        ld b,0
+        bit 0,l
+        jr z,.parity_ready
+        inc b
+.parity_ready:
+        srl h
+        rr l
+        out (YPORT),a
+        call make_dest
+        ld a,(fill_color)
+        ld c,a
+        ld a,b
+        or a
+        jr nz,.low
+        ld a,c
+        rlca
+        rlca
+        rlca
+        rlca
+        ld c,a
+        ld a,(hl)
+        and #0f
+        or c
+        ld (hl),a
+        ret
+.low:  ld a,(hl)
+        and #f0
+        or c
+        ld (hl),a
         ret
 
 ; A=0 when either extent is zero, A=1 otherwise.  Empty operations return
@@ -828,6 +937,9 @@ copy_rect_core:
         call resolve_target
         or a
         ret nz
+        call validate_copy_alignment
+        or a
+        ret nz
         ld hl,(copy_w)
         ld a,h
         or l
@@ -839,6 +951,7 @@ copy_rect_core:
         call validate_copy_rect
         or a
         ret nz
+        call copy_pixels_to_bytes
         ld a,(copy_require_same)
         or a
         jr z,.mapping
@@ -885,6 +998,36 @@ validate_copy_rect:
         ld (rect_y),a
         jp validate_rect
 
+validate_copy_alignment:
+        ld a,(copy_sx)
+        bit 0,a
+        jr nz,.bad
+        ld a,(copy_dx)
+        bit 0,a
+        jr nz,.bad
+        ld a,(copy_w)
+        bit 0,a
+        jr nz,.bad
+        xor a
+        ret
+.bad:  ld a,ERR_ARGUMENT
+        ret
+
+copy_pixels_to_bytes:
+        ld hl,(copy_sx)
+        srl h
+        rr l
+        ld (copy_sx),hl
+        ld hl,(copy_dx)
+        srl h
+        rr l
+        ld (copy_dx),hl
+        ld hl,(copy_w)
+        srl h
+        rr l
+        ld (copy_w),hl
+        ret
+
 ; D=source, E=destination flags.
 gfx_copy_buffer:
         ld a,d
@@ -899,7 +1042,7 @@ gfx_copy_buffer:
         ld (copy_dx+1),a
         ld (copy_dy),a
         ld (copy_require_same),a
-        ld hl,320
+        ld hl,640
         ld (copy_w),hl
         ld hl,256
         ld (copy_h),hl
@@ -1159,10 +1302,11 @@ gfx_draw_rect:
         ld (draw_h+1),a
         inc de
         ld a,(de)
-        ld (fill_color),a
+        ld (pixel_color),a
         inc de
         ld a,(de)
         ld b,a
+        ld (pixel_flags),a
         inc de
         ld a,(de)
         ld c,a
@@ -1174,11 +1318,23 @@ gfx_draw_rect:
         ld a,(de)
         or c
         jr nz,.bad_reserved
-        ld a,b
+        ld a,(pixel_color)
+        cp 16
+        jr nc,.bad_reserved
+        call expand_color
+        ld (fill_color),a
+        ld a,(pixel_flags)
+        call reject_solid_key
+        or a
+        ret nz
+        ld a,(pixel_flags)
         call resolve_target
         or a
         ret nz
         call draw_load_original_rect
+        call validate_rect_alignment
+        or a
+        ret nz
         call rect_is_empty
         or a
         ret z
@@ -1211,23 +1367,20 @@ draw_load_original_rect:
         ret
 
 draw_rect_mapped:
-        ld hl,(draw_h)
-        ld de,1
-        or a
-        sbc hl,de
-        jp z,fill_rect_mapped
-        ld hl,(draw_w)
-        ld de,1
-        or a
-        sbc hl,de
-        jp z,fill_rect_mapped
         ; top edge
         call draw_load_original_rect
+        call rect_pixels_to_bytes
         ld hl,1
         ld (rect_h),hl
         call fill_rect_mapped
+        ld hl,(draw_h)
+        dec hl
+        ld a,h
+        or l
+        ret z                       ; height=1 consists only of the top edge
         ; bottom edge
         call draw_load_original_rect
+        call rect_pixels_to_bytes
         ld hl,(draw_h)
         dec hl
         ld a,(draw_y)
@@ -1241,38 +1394,42 @@ draw_rect_mapped:
         or a
         sbc hl,de
         ret z                       ; height=2 consists only of top and bottom
-        ; left edge excluding corners
-        call draw_load_original_rect
-        ld hl,1
-        ld (rect_w),hl
+        ; Pixel-wide sides excluding corners use nibble read-modify-write.
+        ld a,(pixel_color)
+        ld (fill_color),a
         ld a,(draw_y)
         inc a
-        ld (rect_y),a
+        ld (line_y),a
         ld hl,(draw_h)
         dec hl
         dec hl
-        ld (rect_h),hl
-        call fill_rect_mapped
-        ; right edge excluding corners
-        call draw_load_original_rect
+        ld (line_count),hl
         ld hl,(draw_w)
         dec hl
         ld de,(draw_x)
         add hl,de
-        ld (rect_x),hl
-        ld hl,1
-        ld (rect_w),hl
-        ld a,(draw_y)
+        ld (line_x1),hl
+.side: ld hl,(draw_x)
+        ld a,(line_y)
+        call pixel_write_mapped
+        ld hl,(line_x1)
+        ld a,(line_y)
+        call pixel_write_mapped
+        ld a,(line_y)
         inc a
-        ld (rect_y),a
-        ld hl,(draw_h)
+        ld (line_y),a
+        ld hl,(line_count)
         dec hl
-        dec hl
-        ld (rect_h),hl
-        jp fill_rect_mapped
+        ld (line_count),hl
+        ld a,h
+        or l
+        jr nz,.side
+        ret
 
 ; IX=x, IYH=0, IYL=y, A=color, E=flags.
 gfx_put_pixel:
+        cp 16
+        jr nc,.bad
         ld (pixel_color),a
         ld a,e
         ld (pixel_flags),a
@@ -1281,7 +1438,7 @@ gfx_put_pixel:
         jr nz,.bad
         push ix
         pop hl
-        ld de,320
+        ld de,640
         or a
         sbc hl,de
         jr nc,.bad
@@ -1293,8 +1450,10 @@ gfx_put_pixel:
         bit 3,a
         jr z,.map
         ld a,(pixel_color)
-        cp #ff
-        ret z
+        cp 15
+        jr nz,.map
+        xor a                      ; KEY_FF colour 15 is a successful no-op
+        ret
 .map:
         call check_vram_window
         or a
@@ -1303,11 +1462,10 @@ gfx_put_pixel:
         call map_vram
         push ix
         pop hl
-        ld a,iyl
-        out (YPORT),a
-        call make_dest
         ld a,(pixel_color)
-        ld (hl),a
+        ld (fill_color),a
+        ld a,iyl
+        call pixel_write_mapped
         call unmap_vram
         call leave_di
         xor a
@@ -1324,7 +1482,7 @@ gfx_get_pixel:
         jr nz,.bad
         push ix
         pop hl
-        ld de,320
+        ld de,640
         or a
         sbc hl,de
         jr nc,.bad
@@ -1341,6 +1499,13 @@ gfx_get_pixel:
         call map_vram
         push ix
         pop hl
+        ld b,0
+        bit 0,l
+        jr z,.parity_ready
+        inc b
+.parity_ready:
+        srl h
+        rr l
         ld de,(source_buffer)
         add hl,de
         ld de,(vram_base)
@@ -1348,6 +1513,16 @@ gfx_get_pixel:
         ld a,iyl
         out (YPORT),a
         ld a,(hl)
+        ld c,a
+        ld a,b
+        or a
+        ld a,c
+        jr nz,.low
+        rrca
+        rrca
+        rrca
+        rrca
+.low:  and #0f
         ld (pixel_color),a
         call unmap_vram
         call leave_di
@@ -1382,6 +1557,15 @@ gfx_line:
         ld (fill_color),a
         inc de
         ld a,(de)
+        ld (pixel_flags),a
+        ld a,(fill_color)
+        cp 16
+        jr nc,.bad
+        ld a,(pixel_flags)
+        call reject_solid_key
+        or a
+        ret nz
+        ld a,(pixel_flags)
         call resolve_target
         or a
         ret nz
@@ -1393,22 +1577,7 @@ gfx_line:
         call validate_x
         or a
         ret nz
-        ld a,(op_flags)
-        bit 3,a
-        jr z,.prepare
-        ld a,(fill_color)
-        cp #ff
-        ret z
-.prepare:
         call line_prepare
-        ld hl,(line_dy)
-        ld a,h
-        or l
-        jp z,line_horizontal
-        ld hl,(line_dx)
-        ld a,h
-        or l
-        jp z,line_vertical
         call check_vram_window
         or a
         ret nz
@@ -1428,58 +1597,11 @@ gfx_line:
         call leave_di
         xor a
         ret
-
-line_horizontal:
-        ld hl,(line_x0)
-        ld de,(line_x1)
-        or a
-        sbc hl,de
-        jr c,.x0
-        ld hl,(line_x1)
-        jr .store_x
-.x0:   ld hl,(line_x0)
-.store_x:
-        ld (rect_x),hl
-        ld a,(line_y0)
-        ld (rect_y),a
-        ld hl,(line_dx)
-        inc hl
-        ld (rect_w),hl
-        ld hl,1
-        ld (rect_h),hl
-        jr line_fill_accelerated
-
-line_vertical:
-        ld hl,(line_x0)
-        ld (rect_x),hl
-        ld a,(line_y0)
-        ld b,a
-        ld a,(line_y1)
-        cp b
-        jr c,.store_y
-        ld a,b
-.store_y:
-        ld (rect_y),a
-        ld hl,1
-        ld (rect_w),hl
-        ld hl,(line_dy)
-        inc hl
-        ld (rect_h),hl
-
-line_fill_accelerated:
-        call check_vram_window
-        or a
-        ret nz
-        call enter_di
-        call map_vram
-        call fill_rect_mapped
-        call unmap_vram
-        call leave_di
-        xor a
+.bad:  ld a,ERR_ARGUMENT
         ret
 
 validate_x:
-        ld de,320
+        ld de,640
         or a
         sbc hl,de
         jr nc,.bad
@@ -1621,11 +1743,7 @@ line_y_major:
 line_plot:
         ld hl,(line_cur_x)
         ld a,(line_cur_y)
-        out (YPORT),a
-        call make_dest
-        ld a,(fill_color)
-        ld (hl),a
-        ret
+        jp pixel_write_mapped
 
 ; DE -> GfxScrollRect (16-byte packed descriptor).
 gfx_scroll_rect:
@@ -1677,6 +1795,22 @@ gfx_scroll_rect:
         inc de
         ld a,(de)
         or b
+        jp nz,.bad
+        ld a,(scroll_fill)
+        cp 16
+        jp nc,.bad
+        ld a,(scroll_flags)
+        call reject_solid_key
+        or a
+        ret nz
+        ld a,(scroll_x)
+        bit 0,a
+        jp nz,.bad
+        ld a,(scroll_w)
+        bit 0,a
+        jp nz,.bad
+        ld a,(scroll_dx)
+        bit 0,a
         jp nz,.bad
         ld hl,(scroll_x)
         ld (rect_x),hl
@@ -1883,11 +2017,13 @@ scroll_fill_horizontal_strip:
 
 scroll_fill_current_rect:
         ld a,(scroll_fill)
+        call expand_color
         ld (fill_color),a
         ld a,(scroll_flags)
         call resolve_target
         or a
         ret nz
+        call rect_pixels_to_bytes
         call check_vram_window
         or a
         ret nz
@@ -1899,7 +2035,7 @@ scroll_fill_current_rect:
         xor a
         ret
 
-; ---- 16x16 row-major tiles -------------------------------------------------
+; ---- 16x32 packed-4bpp row-major tiles -------------------------------------
 ; DE TileRef: D logical page, E slot. IX=x, IYH=0, IYL=y, A flags.
 gfx_draw_tile:
         call tile_prefetch_safe
@@ -1919,28 +2055,29 @@ gfx_draw_tile_clip:
         call resolve_target
         or a
         ret nz
-        ld a,16
+        ld a,8
         ld (tile_draw_width),a
+        ld a,32
         ld (tile_draw_rows),a
-        ld a,(tile_x+1)
+        ld hl,640
+        ld de,(tile_x)
         or a
-        jr z,.vertical_clip
-        ld a,64
-        ld b,a
-        ld a,(tile_x)
-        ld c,a
-        ld a,b
-        sub c
-        cp 17
-        jr c,.store_width
-        ld a,16
+        sbc hl,de
+        srl h
+        rr l
+        ld a,h
+        or a
+        jr nz,.vertical_clip
+        ld a,l
+        cp 9
+        jr nc,.vertical_clip
 .store_width:
         ld (tile_draw_width),a
 .vertical_clip:
         ld a,(tile_y)
-        cp 241
+        cp 225
         jr c,.draw
-        neg                         ; 256-y, valid for y=241..255
+        neg                         ; 256-y, valid for y=225..255
         ld (tile_draw_rows),a
 .draw:  jp draw_tile_sized_target_ready
 
@@ -1966,20 +2103,20 @@ tile_prefetch_safe:
         ; A zero count is the internal representation of a 256-entry table.
 .have:
         call tile_prefetch_no_flags
-        ld a,ixh
-        cp 2
-        jr nc,.bad
+        push ix
+        pop hl
+        bit 0,l
+        jr nz,.bad
+        ld de,625                 ; x<=624 is the last full 16-pixel tile
         or a
-        jr z,.x_ok
-        ld a,ixl
-        cp 49                     ; X=#0130 (304) is the last full tile
+        sbc hl,de
         jr nc,.bad
 .x_ok:
         ld a,iyh
         or a
         jr nz,.bad
         ld a,iyl
-        cp 241
+        cp 225
         jr nc,.bad
         xor a
         ret
@@ -2009,13 +2146,13 @@ tile_prefetch_clip:
         jr z,.page
 .page_ok:
         call tile_prefetch_no_flags
-        ld a,ixh
-        cp 2
-        jr nc,.bad
+        push ix
+        pop hl
+        bit 0,l
+        jr nz,.bad
+        ld de,640
         or a
-        jr z,.y
-        ld a,ixl
-        cp 64
+        sbc hl,de
         jr nc,.bad
 .y:    ld a,iyh
         or a
@@ -2056,8 +2193,9 @@ draw_tile_prefetched:
         ; Fall through only after destination/alias have been resolved.  Batch
         ; entries use this shared target state and skip the repeated resolver.
 draw_tile_target_ready:
-        ld a,16
+        ld a,8
         ld (tile_draw_width),a
+        ld a,32
         ld (tile_draw_rows),a
 draw_tile_sized_target_ready:
         call check_tile_windows
@@ -2072,6 +2210,8 @@ draw_tile_sized_target_ready:
         out (PAGEPORT0),a
         call map_vram
         ld hl,(tile_x)
+        srl h
+        rr l
         ld a,(tile_y)
         call make_dest
         ex de,hl                  ; DE=destination column in VRAM
@@ -2084,17 +2224,17 @@ draw_tile_sized_target_ready:
         ld b,a
 .row:   ld a,c
         out (YPORT),a
-        ; OFF ends the previous command, therefore the 16-byte block size
+        ; OFF ends the previous command, therefore the 8-byte block size
         ; must be latched again for every row (proven spevosdk sequence).
         ld d,d
 .copy_size:
-        ld a,16
+        ld a,8
         ld l,l
         ld a,(hl)
         ld (de),a
         ld b,b                    ; mandatory completion/idle
         ld a,l
-        add a,16                  ; next 16-byte row in row-major tile
+        add a,8                   ; next 8-byte packed row
         ld l,a
         inc c
         djnz .row
@@ -2130,19 +2270,22 @@ gfx_draw_tile_span:
         inc de
         ld a,(de)
         ld (tile_flags),a
+        ld a,(tile_x)
+        bit 0,a
+        jr nz,.bad
         ld hl,(batch_count)
         ld a,h
         or l
         jp z,gfx_batch_done
-        ; A 16-pixel span can contain at most 20 whole tiles in 320 pixels.
+        ; A 16-pixel span can contain at most 40 whole tiles in 640 pixels.
         ld a,h
         or a
         jr nz,.bad
         ld a,l
-        cp 21
+        cp 41
         jr nc,.bad
         ld a,(tile_y)
-        cp 241
+        cp 225
         jr nc,.bad
         ld hl,(batch_count)
         add hl,hl
@@ -2156,10 +2299,10 @@ gfx_draw_tile_span:
         add hl,hl                  ; count * 16
         ld de,(tile_x)
         add hl,de
-        ld de,321
+        ld de,641
         or a
         sbc hl,de
-        jr nc,.bad                 ; x + count*16 <= 320
+        jr nc,.bad                 ; x + count*16 <= 640
         ld a,(tile_flags)
         call resolve_target
         or a
@@ -2338,6 +2481,9 @@ gfx_draw_tilemap:
         ld a,(de)
         or b
         jr nz,.bad
+        ld a,(grid_x)
+        bit 0,a
+        jr nz,.bad
         call grid_empty
         ret z
         call validate_tilemap
@@ -2382,6 +2528,9 @@ gfx_draw_metatile:
         inc de
         ld a,(de)
         ld (tile_flags),a
+        ld a,(grid_x)
+        bit 0,a
+        jr nz,.bad
         call grid_empty
         ret z
         call validate_grid_destination
@@ -2502,8 +2651,11 @@ validate_grid_destination:
         or a
         jr nz,.bad
         ld a,l
-        cp 21
+        cp 41
         jr nc,.bad
+        ld a,(grid_x)
+        bit 0,a
+        jr nz,.bad
         add hl,hl
         add hl,hl
         add hl,hl
@@ -2511,7 +2663,7 @@ validate_grid_destination:
         ld de,(grid_x)
         add hl,de
         jr c,.bad
-        ld de,321
+        ld de,641
         or a
         sbc hl,de
         jr nc,.bad
@@ -2520,8 +2672,9 @@ validate_grid_destination:
         or a
         jr nz,.bad
         ld a,l
-        cp 17
+        cp 9
         jr nc,.bad
+        add hl,hl
         add hl,hl
         add hl,hl
         add hl,hl
@@ -2641,7 +2794,7 @@ draw_grid:
         jr c,.argument
         ld (grid_row_ptr),hl
         ld a,(tile_y)
-        add a,16
+        add a,32
         ld (tile_y),a
         jr .row
 .argument:
@@ -2652,24 +2805,23 @@ draw_grid:
 ; logical page; WIN0 is mapped and restored only by the following per-tile
 ; draw step, keeping each DI section bounded and ISR-safe between elements.
 batch_prefetch_safe:
+        ld a,d
+        ld b,a                    ; preserve logical page across X arithmetic
         ld a,e
         cp 64
         jr nc,.tile
         ld (tile_slot),a
-        ld a,(tile_x+1)
-        cp 2
-        jr nc,.arg
+        ld hl,(tile_x)
+        bit 0,l
+        jr nz,.arg
+        ld de,625
         or a
-        jr z,.x_ok
-        ld a,(tile_x)
-        cp 49
+        sbc hl,de
         jr nc,.arg
 .x_ok:
         ld a,(tile_y)
-        cp 241
+        cp 225
         jr nc,.arg
-        ld a,d
-        ld b,a
         ld a,(page_table_valid)
         or a
         jr z,.page
@@ -2836,13 +2988,16 @@ palette_lut:    ds 256
 
 config_payload:
         db 16                    ; known structure size
-        db #81                   ; required DSS mode
-        dw 320,256
+        db #82                   ; required DSS packed-4bpp mode
+        dw 640,256
         db 1                     ; vram window (updated by gfx_get_config)
         db 0                     ; source window is fixed WIN0
         db 0                     ; code window (updated by gfx_get_config)
         db 1                     ; GFX_MAPPING_SOURCE_WIN0
         dw #00ff                ; implemented capabilities
-        db 16,16
+        db 16,32
         db 0                     ; GFX_TILE_ROW_MAJOR
         db 0                     ; reserved
+
+        ; An L0 image is mapped through one 16-KiB CPU window.
+        assert $-gfx_image_start <= #4000

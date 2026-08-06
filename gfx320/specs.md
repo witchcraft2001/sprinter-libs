@@ -1113,10 +1113,10 @@ IXH = palette_mask
 общие исходные include-модули, например:
 
 ```text
-common/palette.inc
-common/fade.inc
-common/winmgr.inc
-common/accelerator.inc
+../common/palette.inc
+../common/fade.inc
+../common/winmgr.inc
+../common/accelerator.inc
 ```
 
 Они включаются при сборке `GFX320.DLL` и будущего `GFX640.DLL`. Публичные

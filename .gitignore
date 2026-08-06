@@ -5,6 +5,7 @@ build/
 afnt640/docs/
 specs.md
 !gfx320/specs.md
+!gfx640/specs.md
 !win320/specs.md
 cfg/
 snap/sprinter/

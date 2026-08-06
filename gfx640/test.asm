@@ -1,13 +1,13 @@
         org #8100-512
 
-; Visual ABI 1.0 test. GFX320.DLL must be beside this EXE.
+; Visual ABI 1.0 test. GFX640.DLL must be beside this EXE.
         dw #5845
         db #45,#00
         dw #0200,#0000,#0000,#0000,#0000,#0000
         dw start,start,#bfff
         ds 490
 
-        include "gfx320.inc"
+        include "gfx640.inc"
 
 DSS_APPINFO            equ #47
 APPINFO_EXE_HOMEDIR    equ 1
@@ -35,7 +35,7 @@ start:
         ld a,b
         ld (old_screen),a
         ld bc,#0050
-        ld a,#81
+        ld a,#82
         rst #10
         ld c,#51
         rst #10
@@ -178,7 +178,7 @@ start:
         jp nz,failed_gfx
         endif
         ; The DSS console shares the graphics VRAM field: printing while mode
-        ; #81 is active writes symbol/attribute bytes straight into the
+        ; #82 is active writes packed graphics bytes straight into the
         ; picture (visible as garbage in the top rows).  Wait silently and
         ; print the summary only after the original mode is restored.
         ld c,#30
@@ -300,9 +300,15 @@ free_tile_page:
         rst #10
         ret
 
-; Unaccelerated 8x8 white sentinel in the top-left corner. If it is visible but
+; Unaccelerated 16x8 white sentinel in the top-left corner. If it is visible but
 ; the rest is absent, mode/palette/VRAM are correct and the fault is inside DLL.
 draw_cpu_probe:
+        ld b,a
+        rlca
+        rlca
+        rlca
+        rlca
+        or b
         ld (probe_color),a
         ld a,e
         ld (probe_x),a
@@ -348,7 +354,7 @@ line_demo:
         ld hl,(handle)
         ld ix,20
         ld iy,#0028
-        ld de,#0518              ; front buffer + length 280
+        ld de,#0a58              ; front buffer + length 600 (flags at bit 10)
         ld a,2
         ld b,GFX_HLINE
         call LIBMAN.l_call
@@ -356,9 +362,9 @@ line_demo:
         or a
         ret nz
         ld hl,(handle)
-        ld ix,160
+        ld ix,639
         ld iy,#0030
-        ld de,#04d0              ; front buffer + length 208 (to row 255)
+        ld de,#08d0              ; front buffer + length 208 (to row 255)
         ld a,3
         ld b,GFX_VLINE
         call LIBMAN.l_call
@@ -410,9 +416,9 @@ advanced_demo:
         ret nz
         ld hl,(handle)
         ld de,#000f              ; logical page 0, slot 15
-        ld ix,312
+        ld ix,632
         ld iy,#00f8             ; bottom/right 8x8 crop
-        ld a,GFX_TARGET_FRONT
+        ld a,GFX_TARGET_FRONT|GFX_KEY_FF
         ld b,GFX_DRAW_TILE_CLIP
         call LIBMAN.l_call
         ret
@@ -470,9 +476,10 @@ move_scroll_demo:
         call LIBMAN.l_call
         ret
 
-; A real application should call GFX_FADE_STEP from its existing frame ISR.
-; This standalone test deliberately uses a busy delay: taking ownership of
-; DSS CTC/IM2 channels here would leave the command environment damaged.
+; GFX640 is non-reentrant and must not be called directly from an ISR. A real
+; application has its frame ISR update a flag/counter, then calls FADE_STEP
+; from the main loop. This standalone test uses a busy delay because taking
+; ownership of DSS CTC/IM2 channels would leave the command environment damaged.
 fade_demo:
         ld hl,(handle)
         ld a,GFX_FADE_OUT
@@ -537,7 +544,7 @@ self_check:
         ld a,#51
         ld (test_stage),a          ; zero-length hline
         ld hl,(handle)
-        ld ix,320
+        ld ix,640
         ld iy,0
         ld de,0
         xor a
@@ -565,9 +572,19 @@ self_check:
         ret
 .pixel:
         ld a,#53
-        ld (test_stage),a          ; put_pixel
+        ld (test_stage),a          ; high nibble at x=638
         ld hl,(handle)
-        ld ix,319
+        ld ix,638
+        ld iy,#00ff
+        ld a,6
+        ld e,GFX_TARGET_BUF0
+        ld b,GFX_PUT_PIXEL
+        call LIBMAN.l_call
+        ret c
+        or a
+        ret nz
+        ld hl,(handle)
+        ld ix,639
         ld iy,#00ff
         ld a,7
         ld e,GFX_TARGET_BUF0
@@ -577,9 +594,9 @@ self_check:
         or a
         ret nz
         ld a,#54
-        ld (test_stage),a          ; get_pixel
+        ld (test_stage),a          ; low nibble at x=639
         ld hl,(handle)
-        ld ix,319
+        ld ix,639
         ld iy,#00ff
         ld e,GFX_SOURCE_BUF0
         ld b,GFX_GET_PIXEL
@@ -590,7 +607,20 @@ self_check:
         ld a,e
         ld (pixel_observed),a
         cp 7
+        jr nz,.mismatch
+        ld hl,(handle)
+        ld ix,638
+        ld iy,#00ff
+        ld e,GFX_SOURCE_BUF0
+        ld b,GFX_GET_PIXEL
+        call LIBMAN.l_call
+        ret c
+        or a
+        ret nz
+        ld a,e
+        cp 6
         jr z,.ok
+.mismatch:
         ld a,#55
         ld (test_stage),a          ; pixel round-trip mismatch
         ld a,GFX_ERR_ARGUMENT
@@ -813,30 +843,36 @@ benchmark_bars:
 
 ; HL -> tick counter word, IY = bar row, A = colour. One 2-ms tick draws two
 ; pixels, so bar width in pixels equals elapsed milliseconds; longer
-; measurements clamp at the full 320-pixel width (>= 320 ms).
+; measurements clamp at the full 640-pixel width (>= 640 ms).
 benchmark_bar:
         ld (bench_color),a
         ld e,(hl)
         inc hl
         ld d,(hl)
         ld a,d
+        cp 2
+        jr nc,.clamp
         or a
         jr z,.scale
-        ld de,160                 ; >=256 ticks: clamp before scaling
+        ld a,e
+        cp 64                     ; #0140 ticks = 640 ms
+        jr c,.scale
+.clamp:
+        ld de,320
 .scale:
         ex de,hl
         add hl,hl                 ; pixels = ticks * 2 = milliseconds
-        ld de,321
+        ld de,641
         or a
         sbc hl,de
         add hl,de
         jr c,.length_ready
-        ld hl,320
+        ld hl,640
 .length_ready:
         ex de,hl
         ld a,d
-        and 1
-        or #04                    ; FRONT flags shifted into bits 9..12
+        and 3
+        or #08                    ; FRONT flags shifted into bits 10..13
         ld d,a
         ld ix,0
         ld hl,(handle)
@@ -863,62 +899,62 @@ bench_im2_table:     ds 257
 
         include "../common/load_library.inc"
 
-welcome: db "GFX320 ABI 1.0 visual test: loading DLL...",13,10,0
+welcome: db "GFX640 ABI 1.0 visual test: loading DLL...",13,10,0
 prompt: db 13,10,"Palette, copy, primitives and tiles rendered.",13,10,0
-error_message: db "GFX320 test setup failed. Put GFX320.DLL beside this EXE.",13,10,0
+error_message: db "GFX640 test setup failed. Put GFX640.DLL beside this EXE.",13,10,0
 error_detail: db "libman reason=$"
 load_reason_hex: db "00, DSS error=$"
 load_dsserr_hex: db "00, GFX status=$"
 gfx_status_hex: db "00, test stage=$"
 test_stage_hex: db "00, pixel=$"
 pixel_observed_hex: db "00",13,10,0
-libname: db "GFX320.DLL",0
+libname: db "GFX640.DLL",0
 libpath: ds 128
 
 ; Descriptor x,y,width,height,color,flags,reserved[3].
 rect_blue: dw 12
            db 12
-           dw 296,32
+           dw 616,32
            db 1,GFX_TARGET_FRONT,0,0,0
 
 frame_rect: dw 8
             db 8
-            dw 304,240
+            dw 624,240
             db 6,GFX_TARGET_FRONT,0,0,0
 
 diagonal_line: dw 16
                db 56
-               dw 303
+               dw 623
                db 239,10,GFX_TARGET_FRONT
 
-back_marker: dw 280
+back_marker: dw 600
              db 216
              dw 24,20
              db 9,GFX_TARGET_BACK,0,0,0
 
-transient_rect: dw 248
+transient_rect: dw 560
                 db 16
                 dw 32,32
                 db 12,GFX_TARGET_FRONT|GFX_VRAM_ONLY,0,0,0
 
-restore_rect: dw 248
+restore_rect: dw 560
               db 16
               dw 32,32
               db GFX_TARGET_FRONT
 
 move_marker:
               db GFX_SOURCE_FRONT,GFX_TARGET_FRONT
-              dw 280
+              dw 600
               db 216
-              dw 240
+              dw 544
               db 216
               dw 24,20
 
 scroll_band:
-              dw 32
+              dw 64
               db 72
-              dw 256,16
-              dw 8,0
+              dw 512,16
+              dw 16,0
               db 0,GFX_TARGET_FRONT,0,0,0
 ; TileRef values: page 0, slots 0..15.
 span: dw span_refs
@@ -947,7 +983,7 @@ tilemap_desc:
            dw 4,2
            dw 0,0
            dw 4,2
-           dw 128
+           dw 256
            db 112,GFX_TARGET_FRONT,0,0
 tilemap_refs:
            db 0,0, 1,0, 2,0, 3,0
@@ -956,18 +992,21 @@ tilemap_refs:
 metatile_desc:
            dw metatile_refs
            db 2,2
-           dw 272
+           dw 544
            db 160,GFX_TARGET_FRONT
 metatile_refs:
            db 8,0, 9,0, 10,0, 11,0
 
-; 16 simple 16x16 tiles, arranged as coloured stripe/checker patterns.
+; 16 packed 16x32 tiles. The last contains #FF transparent pixel pairs.
 tiles:
-        ; Every row starts with a bright colour and has a dark checker body.
-        ; Repetition also verifies that source offsets advance by 16 bytes/row.
-        dup 256
-          db 4
-          ds 15,5
+        dup 15
+          dup 32
+            db #45
+            ds 7,#55
+          edup
+        edup
+        dup 32
+          db #ff,#e7,#77,#77,#77,#77,#7e,#ff
         edup
 
 ; 32-entry palette in BIOS B,G,R,reserved format.

@@ -121,5 +121,5 @@ start:
 
         include "../../../common/load_library.inc"
 
-libname: db "GFX320.DLL",0
+libname: db "GFX640.DLL",0
 libpath: ds 128

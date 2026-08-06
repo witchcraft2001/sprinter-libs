@@ -1,0 +1,174 @@
+; GFX640.DLL public ABI 1.0 constants for sjasmplus clients.
+GFX_INIT            equ 0
+GFX_FREE            equ 1
+GFX_SET_VRAM_WINDOW equ 2
+GFX_GET_VERSION     equ 4
+GFX_GET_CONFIG      equ 5
+GFX_CLEAR           equ 6
+GFX_FILL_RECT       equ 7
+GFX_HLINE           equ 8
+GFX_VLINE           equ 9
+GFX_COPY_RECT       equ 10
+GFX_COPY_BUFFER     equ 11
+GFX_RESTORE_RECT    equ 12
+GFX_PALETTE_LOAD256 equ 13
+GFX_PALETTE_LOAD_RANGE equ 14
+GFX_PALETTE_SET     equ 15
+GFX_FADE_BEGIN      equ 16
+GFX_FADE_STEP       equ 17
+GFX_FADE_CANCEL     equ 18
+GFX_SWAP_BUFFERS    equ 21
+GFX_SET_PAGE_TABLE  equ 22
+GFX_DRAW_TILE       equ 23
+GFX_DRAW_TILE_FAST  equ 24
+GFX_DRAW_TILE_SPAN  equ 25
+GFX_DRAW_TILEMAP    equ 26
+GFX_DRAW_METATILE   equ 27
+GFX_DRAW_RECT       equ 28
+GFX_PUT_PIXEL       equ 29
+GFX_GET_PIXEL       equ 30
+GFX_LINE            equ 31
+GFX_MOVE_RECT       equ 32
+GFX_SCROLL_RECT     equ 33
+GFX_DRAW_TILE_LIST  equ 34
+GFX_DRAW_TILE_CLIP  equ 35
+
+GFX_ERR_ARGUMENT    equ #10
+GFX_ERR_VIDEO_MODE  equ #11
+GFX_ERR_WINDOW      equ #12
+GFX_ERR_PAGE        equ #13
+GFX_ERR_TILE        equ #14
+GFX_ERR_PALETTE     equ #15
+GFX_ERR_BUSY        equ #16
+GFX_ERR_UNSUPPORTED equ #17
+
+GFX_TARGET_BUF0     equ 0
+GFX_TARGET_BUF1     equ 1
+GFX_TARGET_FRONT    equ 2
+GFX_TARGET_BACK     equ 3
+GFX_SOURCE_BUF0     equ 0
+GFX_SOURCE_BUF1     equ 1
+GFX_SOURCE_FRONT    equ 2
+GFX_SOURCE_BACK     equ 3
+GFX_VRAM_ONLY       equ #04
+GFX_KEY_FF          equ #08
+
+GFX_CAP_ACCEL       equ #0001
+GFX_CAP_DRAM_MIRROR equ #0002
+GFX_CAP_KEY_FF      equ #0004
+GFX_CAP_DOUBLE_BUF  equ #0008
+GFX_CAP_PALETTE_RGB8 equ #0010
+GFX_CAP_FADE        equ #0020
+GFX_CAP_TILES       equ #0040
+GFX_CAP_WIN0_SOURCE equ #0080
+
+GFX_PAL_BUFFER0     equ 1
+GFX_PAL_BUFFER1     equ 2
+GFX_PAL_BOTH        equ 3
+GFX_FADE_OUT        equ 0
+GFX_FADE_IN         equ 1
+GFX_RANGE_COUNT_MASK equ #01ff
+GFX_RANGE_PAL_SHIFT equ 9
+GFX_DI_BUDGET_US   equ 200
+GFX_SCREEN_WIDTH   equ 640
+GFX_SCREEN_HEIGHT  equ 256
+GFX_TILE_WIDTH     equ 16
+GFX_TILE_HEIGHT    equ 32
+GFX_COLOR_MASK     equ #0f
+GFX_LENGTH_MASK    equ #03ff
+GFX_LENGTH_FLAGS_MASK equ #3c00
+GFX_LENGTH_FLAGS_SHIFT equ 10
+
+GFX_CONFIG_SIZE     equ 16
+GFX_CFG_STRUCT_SIZE equ 0
+GFX_CFG_DSS_MODE    equ 1
+GFX_CFG_WIDTH       equ 2
+GFX_CFG_HEIGHT      equ 4
+GFX_CFG_VRAM_WINDOW equ 6
+GFX_CFG_SOURCE_WIN  equ 7
+GFX_CFG_CODE_WIN    equ 8
+GFX_CFG_MAPPING     equ 9
+GFX_CFG_CAPS        equ 10
+GFX_CFG_TILE_W      equ 12
+GFX_CFG_TILE_H      equ 13
+GFX_CFG_TILE_LAYOUT equ 14
+
+GFX_FILL_RECT_SIZE  equ 12
+GFX_FR_X             equ 0
+GFX_FR_Y             equ 2
+GFX_FR_WIDTH         equ 3
+GFX_FR_HEIGHT        equ 5
+GFX_FR_COLOR         equ 7
+GFX_FR_FLAGS         equ 8
+
+GFX_COPY_RECT_SIZE   equ 12
+GFX_CR_SOURCE        equ 0
+GFX_CR_FLAGS         equ 1
+GFX_CR_SOURCE_X      equ 2
+GFX_CR_SOURCE_Y      equ 4
+GFX_CR_DEST_X        equ 5
+GFX_CR_DEST_Y        equ 7
+GFX_CR_WIDTH         equ 8
+GFX_CR_HEIGHT        equ 10
+
+GFX_RESTORE_RECT_SIZE equ 8
+GFX_RR_X             equ 0
+GFX_RR_Y             equ 2
+GFX_RR_WIDTH         equ 3
+GFX_RR_HEIGHT        equ 5
+GFX_RR_TARGET        equ 7
+
+; GfxTileSpan has no reserved tail: offsets 0..7 are the complete descriptor.
+GFX_TILE_SPAN_SIZE   equ 8
+GFX_TS_REFS          equ 0
+GFX_TS_COUNT         equ 2
+GFX_TS_X             equ 4
+GFX_TS_Y             equ 6
+GFX_TS_FLAGS         equ 7
+
+GFX_TILE_LIST_SIZE   equ 8
+GFX_TL_ITEMS         equ 0
+GFX_TL_COUNT         equ 2
+GFX_TL_FLAGS         equ 4
+GFX_TILE_ITEM_SIZE   equ 5
+GFX_TI_REF           equ 0
+GFX_TI_X             equ 2
+GFX_TI_Y             equ 4
+
+GFX_TILEMAP_SIZE     equ 20
+GFX_TM_REFS          equ 0
+GFX_TM_MAP_WIDTH     equ 2
+GFX_TM_MAP_HEIGHT    equ 4
+GFX_TM_SOURCE_X      equ 6
+GFX_TM_SOURCE_Y      equ 8
+GFX_TM_DRAW_WIDTH    equ 10
+GFX_TM_DRAW_HEIGHT   equ 12
+GFX_TM_DEST_X        equ 14
+GFX_TM_DEST_Y        equ 16
+GFX_TM_FLAGS         equ 17
+
+GFX_METATILE_SIZE    equ 8
+GFX_MT_REFS          equ 0
+GFX_MT_WIDTH         equ 2
+GFX_MT_HEIGHT        equ 3
+GFX_MT_X             equ 4
+GFX_MT_Y             equ 6
+GFX_MT_FLAGS         equ 7
+
+GFX_LINE_SIZE        equ 8
+GFX_LN_X0            equ 0
+GFX_LN_Y0            equ 2
+GFX_LN_X1            equ 3
+GFX_LN_Y1            equ 5
+GFX_LN_COLOR         equ 6
+GFX_LN_FLAGS         equ 7
+
+GFX_SCROLL_RECT_SIZE equ 16
+GFX_SR_X             equ 0
+GFX_SR_Y             equ 2
+GFX_SR_WIDTH         equ 3
+GFX_SR_HEIGHT        equ 5
+GFX_SR_DX            equ 7
+GFX_SR_DY            equ 9
+GFX_SR_FILL_COLOR    equ 11
+GFX_SR_FLAGS         equ 12
