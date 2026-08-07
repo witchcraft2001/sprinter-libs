@@ -2349,6 +2349,9 @@ draw_tile_transparent_sized_target_ready:
         ld a,(tile_page)
         out (PAGEPORT0),a
         call map_vram
+        ; This path reads and merges individual destination nibbles. It must
+        ; not inherit a pending accelerator command from the previous draw.
+        ACC_OFF
         ld hl,(tile_x)
         srl h
         rr l
@@ -2407,6 +2410,8 @@ draw_tile_transparent_sized_target_ready:
         inc iyl
         dec iyh
         jp nz,.row
+        ; Leave the accelerator idle before restoring DSS-visible state.
+        ACC_OFF
         call unmap_vram
         ld a,(saved_win0_page)
         out (PAGEPORT0),a

@@ -171,6 +171,12 @@ class AbiTests(unittest.TestCase):
             "transparent_width_table:", 1
         )[0]
         self.assertRegex(exact, r"bit 3,a\s+jp z,draw_tile_sized_target_ready")
+        self.assertLess(exact.index("call map_vram"), exact.index("ACC_OFF"))
+        self.assertLess(exact.index("ACC_OFF"), exact.index("ld hl,(tile_x)"))
+        row_end = exact.index("jp nz,.row")
+        final_off = exact.rindex("ACC_OFF")
+        self.assertLess(row_end, final_off)
+        self.assertLess(final_off, exact.index("call unmap_vram", row_end))
         self.assertIn("ld (.dest_load+1),hl", exact)
         self.assertIn("ld iyl,a", exact)
         self.assertIn("ld iyh,a", exact)
