@@ -19,6 +19,7 @@ byte[x >> 1] = (pixel[x & ~1] << 4) | pixel[x | 1]
 ```
 
 ABI сохраняет номера entry `0..35`, регистры и layout дескрипторов GFX320.
+Точная nibble-прозрачность тайлов добавлена в entry `36..41`.
 Зарезервированные entry: 3, 19 и 20.
 
 ## 2. Вызов и статус
@@ -54,9 +55,10 @@ Carry для entry ≥1 не является каналом статуса GFX:
 | 3 | текущий back |
 
 `GFX_VRAM_ONLY=#04` запрещает обновление DRAM-зеркала назначения.
-`GFX_KEY_FF=#08` сохраняет аппаратную байтовую семантику: записываемый байт
-`#FF` не меняет пару пикселей цвета 15. KEY не означает прозрачность каждого
-отдельного nibble.
+`GFX_KEY_FF=#08` для обычных entry означает аппаратную байтовую семантику:
+записываемый `#FF` не меняет пару пикселей. В `*_transparent` этот же флаг делает
+каждый nibble `#F` прозрачным; `#FF` по-прежнему обрабатывается аппаратно.
+Без KEY индекс 15 всегда является обычным цветом.
 
 KEY разрешён для tile/copy/move и специального `put_pixel`. Сплошные
 `clear/fill_rect/draw_rect/hline/vline/line/scroll` возвращают
@@ -85,7 +87,7 @@ Y находится в `0..255`. Прямоугольник должен удо
 проверки цвета, флагов и требований чётности.
 
 `draw_tile_fast` не выполняет safe-проверки; корректные page table, slot,
-`x<=624`, `y<=224` и чётный X являются предусловием вызывающей стороны.
+`x<=608`, `y<=240` и чётный X являются предусловием вызывающей стороны.
 
 ## 5. Таблица entry
 
@@ -126,6 +128,12 @@ Y находится в `0..255`. Прямоугольник должен удо
 | 33 | `gfx_scroll_rect` | DE→`GfxScrollRect` |
 | 34 | `gfx_draw_tile_list` | DE→`GfxTileList` |
 | 35 | `gfx_draw_tile_clip` | регистры как entry 23 |
+| 36 | `gfx_draw_tile_transparent` | регистры как entry 23 |
+| 37 | `gfx_draw_tile_clip_transparent` | регистры как entry 23 |
+| 38 | `gfx_draw_tile_span_transparent` | DE→`GfxTileSpan` |
+| 39 | `gfx_draw_tile_list_transparent` | DE→`GfxTileList` |
+| 40 | `gfx_draw_tilemap_transparent` | DE→`GfxTilemap` |
+| 41 | `gfx_draw_metatile_transparent` | DE→`GfxMetatile` |
 
 Цвет любого сплошного примитива выше 15 возвращает `GFX_ERR_ARGUMENT`.
 
@@ -143,14 +151,15 @@ Y находится в `0..255`. Прямоугольник должен удо
 | 7 | 1 | source window = WIN0 |
 | 8 | 1 | code window |
 | 9 | 1 | mapping = source WIN0 |
-| 10 | 2 | capabilities = `#00FF` |
-| 12 | 1 | tile width = 16 |
-| 13 | 1 | tile height = 32 |
+| 10 | 2 | capabilities = `#01FF` |
+| 12 | 1 | tile width = 32 |
+| 13 | 1 | tile height = 16 |
 | 14 | 1 | row-major layout = 0 |
 | 15 | 1 | reserved = 0 |
 
 Capabilities: accelerator, DRAM mirror, KEY_FF, double buffer, RGB8 palette,
-fade, tiles и WIN0 source. Значения определены в `gfx640.inc`.
+fade, tiles, WIN0 source и `GFX_CAP_NIBBLE_KEY=#0100`. Значения
+определены в `gfx640.inc`.
 
 ## 7. Packed length/flags
 
@@ -191,7 +200,7 @@ Move требует один и тот же resolved buffer и сохраняе�
 ### GfxTileSpan — 8 байт
 
 `refs:u16@0, count:u16@2, x:u16@4, y:u8@6, flags:u8@7`.
-До 40 тайлов, `x+count*16<=640`.
+До 20 тайлов, `x+count*32<=640`.
 
 ### GfxTileItem / GfxTileList
 
@@ -227,24 +236,26 @@ TileRef не изменён: E=slot `0..63`, D=logical page `0..255`.
 
 Тайл занимает ровно 256 байт:
 
-- 16×32 пикселя;
-- 32 строки по 8 байт;
+- 32×16 пикселей;
+- 16 строк по 16 байт;
 - high nibble — левый пиксель пары;
-- row-major, stride источника 8;
+- row-major, stride источника 16;
 - 64 тайла на 16-КБ странице.
 
-Полный тайл: чётный `x<=624`, `y<=224`. Экранная сетка 40×8.
-Span/grid увеличивают X на 16; grid увеличивает Y на 32.
-`draw_tile_clip` принимает чётный `x<640` и любой `y`, обрезает только
-справа/снизу и всегда переходит к следующей строке источника через 8 байт.
+Полный тайл: чётный `x<=608`, `y<=240`. Экранная сетка 20×16.
+Span/grid увеличивают X на 32; grid увеличивает Y на 16.
+Clipped-entry принимают чётный `x<640` и любой `y`, обрезают только справа/снизу
+и всегда переходят к следующей строке источника через 16 байт.
 
-Каждая строка выводится отдельной accelerator COPY длиной восемь байт.
+Каждая строка обычного entry выводится accelerator COPY длиной 16 байт.
 После каждой команды немедленно выполняется `LD B,B`.
+В exact-transparent entry внутренний цикл 16 packed-байт развёрнут; IFF и mapping
+сохраняются один раз на целый тайл. `#F?/#?F` сливаются с DRAM-зеркалом,
+а `#FF` записывается через аппаратный key alias.
 
-Tilepack требует indexed PNG/BMP, размеры кратны 16×32, indices `0..15`.
-Keyed-режим разрешает прозрачность только парой `15,15` → `#FF`; одиночный
-прозрачный пиксель в паре является ошибкой. Маска непустых строк — little-
-endian u32, bit 31 соответствует первой строке, bit 0 — последней; для
+Tilepack требует indexed PNG/BMP, размеры кратны 32×16, indices `0..15`.
+В keyed-режиме каждый индекс 15 прозрачен, в том числе в одной половине packed-пары.
+Маска непустых строк — little-endian u16, bit 15 соответствует первой строке, bit 0 — последней; для
 opaque-пакета все строки считаются непустыми.
 
 ## 10. Copy, move, scroll и зеркало
@@ -299,9 +310,9 @@ L0-код, state и buffers обязаны помещаться в одно 16-�
 ## 13. Проверка
 
 `make host-test` проверяет frozen entry/descriptors, packing length/flags,
-nibble order, 16×32 order, 64 tiles/page, u32 row masks, keyed pairs,
+nibble order, 32×16 order, 64 tiles/page, u16 row masks, keyed half-pairs,
 границы и parity paths. `make z80-test` выполняет source и relocatable DLL во
-всех допустимых WIN1/WIN2/WIN3, проверяет config `#82/640×256/16×32`,
+всех допустимых WIN1/WIN2/WIN3, проверяет config `#82/640×256/32×16`,
 ошибки цвета/выравнивания и сохранение IFF.
 
 `GFX640.EXE` проверяет X=638/639, все примитивы, opaque/keyed/clip tiles,
@@ -314,7 +325,8 @@ span/list/map/metatile, copy/move/scroll, restore, buffers и palette/fade.
 - документированное поведение частичного `VRAM_ONLY`;
 - оба palette bank;
 - сохранность `#280..#3FF`;
-- worst-case 16×32 tile loop относительно `GFX_DI_BUDGET_US=200`.
+- worst-case 32×16 exact-transparent tile loop; этот осознанно медленный
+  путь может превышать `GFX_DI_BUDGET_US=200`.
 
 После изменений в корневом `common/` обязательно повторяются `all`,
 `verify`, host- и Z80-тесты GFX320; её ABI и поведение не меняются.

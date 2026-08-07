@@ -15,6 +15,9 @@ const
   GfxPutPixel = 29; GfxGetPixel = 30; GfxLine = 31;
   GfxMoveRect = 32; GfxScrollRect = 33; GfxDrawTileList = 34;
   GfxDrawTileClip = 35;
+  GfxDrawTileTransparent = 36; GfxDrawTileClipTransparent = 37;
+  GfxDrawTileSpanTransparent = 38; GfxDrawTileListTransparent = 39;
+  GfxDrawTilemapTransparent = 40; GfxDrawMetatileTransparent = 41;
 
   GfxErrArgument = $10; GfxErrMode = $11; GfxErrWindow = $12;
   GfxErrPage = $13; GfxErrTile = $14; GfxErrPalette = $15;
@@ -26,9 +29,10 @@ const
   GfxPalBuffer0 = 1; GfxPalBuffer1 = 2; GfxPalBoth = 3;
   GfxFadeOut = 0; GfxFadeIn = 1;
   GfxScreenWidth = 640; GfxScreenHeight = 256;
-  GfxTileWidth = 16; GfxTileHeight = 32; GfxColorMask = $0f;
+  GfxTileWidth = 32; GfxTileHeight = 16; GfxColorMask = $0f;
   GfxLengthMask = $03ff; GfxLengthFlagsMask = $3c00;
   GfxLengthFlagsShift = 10;
+  GfxCapNibbleKey = $0100;
 
   GfxFillRectSize = 12; GfxCopyRectSize = 12;
   GfxRestoreRectSize = 8; GfxTileSpanSize = 8;

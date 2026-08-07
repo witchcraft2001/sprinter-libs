@@ -9,10 +9,10 @@ build_dir="$repo_root/build/z80-tests"
 dll="$repo_root/build/GFX640.DLL"
 libman_dir="${LIBMAN_DIR:-$repo_root/../../libman/libman}"
 
-addr_result=$((0xE000))
-addr_done=$((0xE001))
-addr_first=$((0xE002))
-addr_fails=$((0xE003))
+addr_result=$((0xF000))
+addr_done=$((0xF001))
+addr_first=$((0xF002))
+addr_fails=$((0xF003))
 done_magic=165
 ticks_limit=20000000
 

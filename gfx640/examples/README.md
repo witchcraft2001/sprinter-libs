@@ -13,4 +13,6 @@ pass that list to `gfx_set_page_table`.
 
 GFX640 coordinates are pixels. Byte-oriented primitives use even X/width,
 while pixels, vertical lines and arbitrary lines may use any X. Tile images
-are indexed 0..15, packed high-nibble first into 16×32/256-byte payloads.
+are indexed 0..15, packed high-nibble first into 32×16/256-byte payloads.
+Use the `*_transparent` entry with `GFX_KEY_FF` when only one pixel of a
+packed pair may be transparent.

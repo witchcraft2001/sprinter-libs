@@ -171,7 +171,7 @@ start:
         endif
         ifdef GFX_BENCH
         ; The benchmark build measures timing only: the shared visual demo is
-        ; skipped so the final screen holds nothing but the four result bars.
+        ; skipped so the final screen holds nothing but the five result bars.
         call benchmark_run
         jp c,failed_loaded
         or a
@@ -371,17 +371,18 @@ line_demo:
         ret
 
 tile_demo:
-        ; A span makes a 16-tile top row.  The list puts individual tiles below.
+        ; A span makes a 16-tile top row. Exact keying exposes the half-pixel
+        ; transparent edges in slot 15; the list exercises the batch sibling.
         ld hl,(handle)
         ld de,span
-        ld b,GFX_DRAW_TILE_SPAN
+        ld b,GFX_DRAW_TILE_SPAN_TRANSPARENT
         call LIBMAN.l_call
         ret c
         or a
         ret nz
         ld hl,(handle)
         ld de,tile_list
-        ld b,GFX_DRAW_TILE_LIST
+        ld b,GFX_DRAW_TILE_LIST_TRANSPARENT
         call LIBMAN.l_call
         ret
 
@@ -402,14 +403,14 @@ advanced_demo:
         ret nz
         ld hl,(handle)
         ld de,tilemap_desc
-        ld b,GFX_DRAW_TILEMAP
+        ld b,GFX_DRAW_TILEMAP_TRANSPARENT
         call LIBMAN.l_call
         ret c
         or a
         ret nz
         ld hl,(handle)
         ld de,metatile_desc
-        ld b,GFX_DRAW_METATILE
+        ld b,GFX_DRAW_METATILE_TRANSPARENT
         call LIBMAN.l_call
         ret c
         or a
@@ -419,7 +420,7 @@ advanced_demo:
         ld ix,632
         ld iy,#00f8             ; bottom/right 8x8 crop
         ld a,GFX_TARGET_FRONT|GFX_KEY_FF
-        ld b,GFX_DRAW_TILE_CLIP
+        ld b,GFX_DRAW_TILE_CLIP_TRANSPARENT
         call LIBMAN.l_call
         ret
 
@@ -631,10 +632,11 @@ self_check:
 
         ifdef GFX_BENCH
 ; Hardware benchmark. The CTC clock is a fixed 7 MHz, so the counter cascade
-; 112*125 = 14000 gives an exact 500 Hz tick (2 ms).  Bars at Y=24/48/72/96
+; 112*125 = 14000 gives an exact 500 Hz tick (2 ms). Bars at Y=24..120
 ; are drawn at 2 px per tick, therefore bar width in pixels equals batch
-; duration in milliseconds: 8 clears, 128 tiles, 8 full-buffer copies and
-; 4 palette loads respectively.  The IM2 vector table lives inside this EXE
+; duration in milliseconds: 8 clears, 128 fast tiles, 128 exact-transparent
+; tiles, 8 full-buffer copies and 4 palette loads. The IM2 vector table lives
+; inside this EXE
 ; image: WIN0 belongs to the DSS system page and must never be written.
 CTC_CH0   equ #10
 CTC_CH2   equ #12
@@ -677,6 +679,25 @@ benchmark_run:
         jr nz,.tile_loop
         call benchmark_stop
         ld (bench_tile_ticks),hl
+
+        ld a,128
+        ld (bench_loops),a
+        call benchmark_start
+.transparent_loop:
+        ld hl,(handle)
+        ld de,#000f
+        ld ix,0
+        ld iy,0
+        ld a,GFX_TARGET_FRONT|GFX_KEY_FF
+        ld b,GFX_DRAW_TILE_TRANSPARENT
+        call LIBMAN.l_call
+        jp c,.done
+        or a
+        jp nz,.done
+        call benchmark_dec_loop
+        jr nz,.transparent_loop
+        call benchmark_stop
+        ld (bench_transparent_ticks),hl
 
         ld a,8
         ld (bench_loops),a
@@ -832,12 +853,16 @@ benchmark_bars:
         ld iy,#0030
         ld a,2
         call benchmark_bar
-        ld hl,bench_copy_ticks
+        ld hl,bench_transparent_ticks
         ld iy,#0048
+        ld a,5
+        call benchmark_bar
+        ld hl,bench_copy_ticks
+        ld iy,#0060
         ld a,3
         call benchmark_bar
         ld hl,bench_palette_ticks
-        ld iy,#0060
+        ld iy,#0078
         ld a,6
         jp benchmark_bar
 
@@ -885,6 +910,7 @@ bench_counter:       dw 0
 bench_started:       dw 0
 bench_clear_ticks:   dw 0
 bench_tile_ticks:    dw 0
+bench_transparent_ticks: dw 0
 bench_copy_ticks:    dw 0
 bench_palette_ticks: dw 0
 bench_loops:         db 0
@@ -960,14 +986,14 @@ scroll_band:
 span: dw span_refs
       dw 16
       dw 32
-      db 72,GFX_TARGET_FRONT
+      db 72,GFX_TARGET_FRONT|GFX_KEY_FF
 span_refs:
       db 0,0, 1,0, 2,0, 3,0, 4,0, 5,0, 6,0, 7,0
       db 8,0, 9,0, 10,0, 11,0, 12,0, 13,0, 14,0, 15,0
 
 tile_list: dw list_items
            dw 8
-           db GFX_TARGET_FRONT,0,0,0
+           db GFX_TARGET_FRONT|GFX_KEY_FF,0,0,0
 list_items:
            db 0,0, 32,0, 112
            db 1,0, 64,0, 128
@@ -984,7 +1010,7 @@ tilemap_desc:
            dw 0,0
            dw 4,2
            dw 256
-           db 112,GFX_TARGET_FRONT,0,0
+           db 112,GFX_TARGET_FRONT|GFX_KEY_FF,0,0
 tilemap_refs:
            db 0,0, 1,0, 2,0, 3,0
            db 4,0, 5,0, 6,0, 7,0
@@ -993,20 +1019,22 @@ metatile_desc:
            dw metatile_refs
            db 2,2
            dw 544
-           db 160,GFX_TARGET_FRONT
+           db 160,GFX_TARGET_FRONT|GFX_KEY_FF
 metatile_refs:
-           db 8,0, 9,0, 10,0, 11,0
+           db 8,0, 9,0, 10,0, 15,0
 
-; 16 packed 16x32 tiles. The last contains #FF transparent pixel pairs.
+; 16 packed 32x16 tiles. The last contains full and half transparent pairs.
 tiles:
         dup 15
-          dup 32
+          dup 16
             db #45
-            ds 7,#55
+            ds 15,#55
           edup
         edup
-        dup 32
-          db #ff,#e7,#77,#77,#77,#77,#7e,#ff
+        dup 16
+          db #ff,#f7
+          ds 12,#77
+          db #7f,#ff
         edup
 
 ; 32-entry palette in BIOS B,G,R,reserved format.

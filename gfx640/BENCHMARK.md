@@ -6,9 +6,8 @@
 
 The benchmark answers one question: how long do real GFX640 operations take
 on the target machine. Those numbers gate optimization work — specs.md §15
-requires hardware timing proof that the worst-case DI sections fit the
-`GFX_DI_BUDGET_US` budget before optional loop unrolling or nonempty-row
-masks may be enabled. It is not needed to *use* the library.
+records the regular accelerated path and the deliberately longer exact
+per-pixel transparency path. It is not needed to *use* the library.
 
 ## Running
 
@@ -26,15 +25,16 @@ are reset before returning to DSS.
 
 ## Reading the results
 
-The final screen contains four horizontal bars starting at the left edge.
+The final screen contains five horizontal bars starting at the left edge.
 One 2-ms tick draws two pixels, therefore **bar width in pixels equals the
 batch duration in milliseconds**; bars clamp at the full 640-pixel width
 (≥ 640 ms):
 
 1. red — 8 full-screen clears;
-2. green — 128 opaque packed 16×32 tiles;
-3. cyan — 8 complete front-to-back buffer copies;
-4. orange — 4 full RGB8 palette loads into both banks.
+2. green — 128 opaque packed 32×16 tiles;
+3. magenta — 128 exact-transparent 32×16 tiles;
+4. cyan — 8 complete front-to-back buffer copies;
+5. orange — 4 full RGB8 palette loads into both banks.
 
 Average time per operation = `bar_width_in_px ms / iterations`. A missing
 bar means the batch finished within the same tick it started (under 2 ms).

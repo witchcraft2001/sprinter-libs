@@ -19,7 +19,13 @@ enum {
     GFX_DRAW_TILEMAP = 26, GFX_DRAW_METATILE = 27,
     GFX_DRAW_RECT = 28, GFX_PUT_PIXEL = 29, GFX_GET_PIXEL = 30,
     GFX_LINE = 31, GFX_MOVE_RECT = 32, GFX_SCROLL_RECT = 33,
-    GFX_DRAW_TILE_LIST = 34, GFX_DRAW_TILE_CLIP = 35
+    GFX_DRAW_TILE_LIST = 34, GFX_DRAW_TILE_CLIP = 35,
+    GFX_DRAW_TILE_TRANSPARENT = 36,
+    GFX_DRAW_TILE_CLIP_TRANSPARENT = 37,
+    GFX_DRAW_TILE_SPAN_TRANSPARENT = 38,
+    GFX_DRAW_TILE_LIST_TRANSPARENT = 39,
+    GFX_DRAW_TILEMAP_TRANSPARENT = 40,
+    GFX_DRAW_METATILE_TRANSPARENT = 41
 };
 
 enum {
@@ -38,11 +44,19 @@ enum {
 
 enum {
     GFX_SCREEN_WIDTH = 640, GFX_SCREEN_HEIGHT = 256,
-    GFX_TILE_WIDTH = 16, GFX_TILE_HEIGHT = 32,
+    GFX_TILE_WIDTH = 32, GFX_TILE_HEIGHT = 16,
     GFX_COLOR_MASK = 0x0f,
     GFX_LENGTH_MASK = 0x03ff,
     GFX_LENGTH_FLAGS_MASK = 0x3c00,
     GFX_LENGTH_FLAGS_SHIFT = 10
+};
+
+enum {
+    GFX_CAP_ACCEL = 0x0001, GFX_CAP_DRAM_MIRROR = 0x0002,
+    GFX_CAP_KEY_FF = 0x0004, GFX_CAP_DOUBLE_BUF = 0x0008,
+    GFX_CAP_PALETTE_RGB8 = 0x0010, GFX_CAP_FADE = 0x0020,
+    GFX_CAP_TILES = 0x0040, GFX_CAP_WIN0_SOURCE = 0x0080,
+    GFX_CAP_NIBBLE_KEY = 0x0100
 };
 
 typedef struct {
@@ -158,10 +172,16 @@ gfx_u8 gfx640_set_page_table(const gfx_u8 *pages, gfx_u16 count);
 gfx_u8 gfx640_draw_tile(gfx_u16 ref, gfx_u16 x, gfx_u8 y, gfx_u8 flags);
 gfx_u8 gfx640_draw_tile_fast(gfx_u16 ref, gfx_u16 x, gfx_u8 y, gfx_u8 flags);
 gfx_u8 gfx640_draw_tile_clip(gfx_u16 ref, gfx_u16 x, gfx_u8 y, gfx_u8 flags);
+gfx_u8 gfx640_draw_tile_transparent(gfx_u16 ref, gfx_u16 x, gfx_u8 y, gfx_u8 flags);
+gfx_u8 gfx640_draw_tile_clip_transparent(gfx_u16 ref, gfx_u16 x, gfx_u8 y, gfx_u8 flags);
 gfx_u8 gfx640_draw_tile_span(const gfx640_tile_span_t *span);
 gfx_u8 gfx640_draw_tile_list(const gfx640_tile_list_t *list);
 gfx_u8 gfx640_draw_tilemap(const gfx640_tilemap_t *map);
 gfx_u8 gfx640_draw_metatile(const gfx640_metatile_t *metatile);
+gfx_u8 gfx640_draw_tile_span_transparent(const gfx640_tile_span_t *span);
+gfx_u8 gfx640_draw_tile_list_transparent(const gfx640_tile_list_t *list);
+gfx_u8 gfx640_draw_tilemap_transparent(const gfx640_tilemap_t *map);
+gfx_u8 gfx640_draw_metatile_transparent(const gfx640_metatile_t *metatile);
 gfx_u8 gfx640_draw_rect(const gfx640_rect_t *rect);
 gfx_u8 gfx640_put_pixel(gfx_u16 x, gfx_u8 y, gfx_u8 color, gfx_u8 flags);
 gfx_u8 gfx640_get_pixel(gfx_u16 x, gfx_u8 y, gfx_u8 source, gfx_u8 *color);

@@ -38,6 +38,20 @@ start:
         ld a,2
         call t_expect_z
 
+        ; Install one logical tile page through the real libman dispatcher.
+        ld hl,0
+        ld de,test_tile_page
+        ld ix,1
+        ld b,22                   ; GFX_SET_PAGE_TABLE
+        call LIBMAN.l_call
+        call t_keep_a
+        ld a,19
+        call t_expect_nc
+        ld a,(t_saved_a)
+        or a
+        ld a,20
+        call t_expect_z
+
         ; Seed both packed nibbles, then update the high/even pixel.
         ld a,#ab
         ld (#413f),a              ; WIN1 base + byte 319
@@ -148,11 +162,53 @@ start:
         ld a,18
         call t_expect_z
 
+        ; One clipped row is enough to execute the relocated exact renderer.
+        ; z88dk-ticks ignores Sprinter page/Y ports, so the source slot is
+        ; deliberately placed at flat address #3000 and #FF is covered by the
+        ; hardware/visual tests rather than asserted in this emulator.
+        ld a,#ab
+        ld (#4000),a
+        ld (#4001),a
+        ld (#4002),a
+        ld hl,0
+        ld de,#0030              ; logical page 0, slot 48 -> #3000
+        ld ix,0
+        ld iy,#00ff              ; clip to one row
+        ld a,#08
+        ld b,37                  ; GFX_DRAW_TILE_CLIP_TRANSPARENT
+        call LIBMAN.l_call
+        call t_keep_a
+        ld a,21
+        call t_expect_nc
+        ld a,(t_saved_a)
+        or a
+        ld a,22
+        call t_expect_z
+        ld a,(#4000)
+        cp #a1
+        ld a,23
+        call t_expect_z
+        ld a,(#4001)
+        cp #2b
+        ld a,24
+        call t_expect_z
+        ld a,(#4002)
+        cp #34
+        ld a,25
+        call t_expect_z
+
         call t_end
         halt
 
         ds #2000-$,0
         include "libman13.asm"
+
+test_tile_page:
+        db 0
+        ds #3000-$,0
+tile_source:
+        db #f1,#2f,#34
+        ds 253,0
 
         ds #c000-$,0
         define GFX640_TEST_BUILD

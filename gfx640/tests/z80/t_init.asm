@@ -48,8 +48,28 @@ one_ref:
         db 0,0
 one_span:
         dw one_ref
-        dw 1,624
-        db 224,0
+        dw 1,608
+        db 240,#08
+one_item:
+        db 0,0
+        dw 0
+        db 0
+one_list:
+        dw one_item
+        dw 1
+        db #08,0,0,0
+one_map:
+        dw one_ref
+        dw 1,1
+        dw 0,0
+        dw 1,1
+        dw 0
+        db 0,#08,0,0
+one_meta:
+        dw one_ref
+        db 1,1
+        dw 0
+        db 0,#08
 
 start:
         ld sp,STACK_VALUE
@@ -116,11 +136,11 @@ start:
         ld a,31
         call t_expect_z
         ld a,(config_buffer+12)
-        cp 16
+        cp 32
         ld a,32
         call t_expect_z
         ld a,(config_buffer+13)
-        cp 32
+        cp 16
         ld a,33
         call t_expect_z
         ld a,(config_buffer+6)
@@ -220,19 +240,19 @@ start:
         ld a,38
         call t_expect_z
 
-        ; Full-tile and clip limits use 16x32 geometry; span shares the safe
+        ; Full-tile and clip limits use 32x16 geometry; span shares the safe
         ; batch path and the same logical-page lookup.
         ld de,0
-        ld ix,624
-        ld iy,#00e0
+        ld ix,608
+        ld iy,#00f0
         xor a
         call gfx_draw_tile
         or a
         ld a,45
         call t_expect_z
         ld de,0
-        ld ix,626
-        ld iy,#00e0
+        ld ix,610
+        ld iy,#00f0
         xor a
         call gfx_draw_tile
         cp ERR_ARGUMENT
@@ -250,6 +270,46 @@ start:
         call gfx_draw_tile_span
         or a
         ld a,48
+        call t_expect_z
+
+        ; Every exact-transparency entry must dispatch and share the safe
+        ; TileRef/page path. The emulator does not model hardware #FF keying,
+        ; so byte composition itself is asserted in t_libcall and host tests.
+        ld de,0
+        ld ix,0
+        ld iy,0
+        ld a,#08
+        call gfx_draw_tile_transparent
+        or a
+        ld a,56
+        call t_expect_z
+        ld de,0
+        ld ix,638
+        ld iy,#00ff
+        ld a,#08
+        call gfx_draw_tile_clip_transparent
+        or a
+        ld a,57
+        call t_expect_z
+        ld de,one_span
+        call gfx_draw_tile_span_transparent
+        or a
+        ld a,58
+        call t_expect_z
+        ld de,one_list
+        call gfx_draw_tile_list_transparent
+        or a
+        ld a,59
+        call t_expect_z
+        ld de,one_map
+        call gfx_draw_tilemap_transparent
+        or a
+        ld a,60
+        call t_expect_z
+        ld de,one_meta
+        call gfx_draw_metatile_transparent
+        or a
+        ld a,61
         call t_expect_z
 
         ; The rightmost odd pixel is legal. Mapping, PORT_Y and IFF are

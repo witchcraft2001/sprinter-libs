@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pack an indexed PNG/BMP into GFX640 packed-4bpp 16x32 tile pages."""
+"""Pack an indexed PNG/BMP into GFX640 packed-4bpp 32x16 tile pages."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
-TILE_WIDTH = 16
-TILE_HEIGHT = 32
+TILE_WIDTH = 32
+TILE_HEIGHT = 16
 TILE_ROW_BYTES = TILE_WIDTH // 2
 TILE_BYTES = TILE_ROW_BYTES * TILE_HEIGHT
 PAGE_BYTES = 16 * 1024
@@ -81,7 +81,7 @@ def extract_tiles(image: IndexedImage, *, keyed: bool | None = None) -> list[byt
     if image.width <= 0 or image.height <= 0:
         raise ValueError("image dimensions must be non-zero")
     if image.width % TILE_WIDTH or image.height % TILE_HEIGHT:
-        raise ValueError("image dimensions must be multiples of 16x32")
+        raise ValueError("image dimensions must be multiples of 32x16")
     if len(image.pixels) != image.width * image.height:
         raise ValueError("pixel payload size does not match image dimensions")
     if len(image.palette) != PALETTE_BYTES:
@@ -98,11 +98,6 @@ def extract_tiles(image: IndexedImage, *, keyed: bool | None = None) -> list[byt
                 source = image.pixels[start : start + TILE_WIDTH]
                 for column in range(0, TILE_WIDTH, 2):
                     left, right = source[column], source[column + 1]
-                    if use_key and ((left == TRANSPARENT_COLOR) != (right == TRANSPARENT_COLOR)):
-                        raise ValueError(
-                            "keyed assets cannot contain a single transparent pixel "
-                            "inside a packed pair"
-                        )
                     payload.append((left << 4) | right)
             assert len(payload) == TILE_BYTES
             tiles.append(bytes(payload))
@@ -152,8 +147,8 @@ def make_nonempty_rows(
         for row in range(TILE_HEIGHT):
             start = row * TILE_ROW_BYTES
             if empty_row is None or tile[start : start + TILE_ROW_BYTES] != empty_row:
-                mask |= 1 << (31 - row)
-        result.extend(struct.pack("<I", mask))
+                mask |= 1 << (15 - row)
+        result.extend(struct.pack("<H", mask))
     return bytes(result)
 
 
@@ -242,7 +237,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("input", type=Path, help="indexed PNG or BMP")
     parser.add_argument("output", type=Path, help="output directory")
     parser.add_argument("--transparent-index", type=int)
-    parser.add_argument("--keyed", action="store_true", help="use #FF transparent pairs")
+    parser.add_argument(
+        "--keyed", action="store_true",
+        help="treat each color-15 pixel as transparent"
+    )
     parser.add_argument("--nonempty-rows", action="store_true")
     parser.add_argument("--metatile-width", type=int, default=0)
     parser.add_argument("--metatile-height", type=int, default=0)

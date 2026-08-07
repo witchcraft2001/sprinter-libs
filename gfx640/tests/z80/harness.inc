@@ -3,10 +3,10 @@ GFX640_TEST_HARNESS equ 1
 
 ; The runner reads these bytes from the emulator's 64-KiB memory dump.
 ; A test only passes when it both reaches TEST_DONE and has no failures.
-TEST_RESULT equ #e000
-TEST_DONE   equ #e001
-TEST_FIRST  equ #e002
-TEST_FAILS  equ #e003
+TEST_RESULT equ #f000
+TEST_DONE   equ #f001
+TEST_FIRST  equ #f002
+TEST_FAILS  equ #f003
 DONE_MAGIC  equ #a5
 
 t_saved_a: db 0

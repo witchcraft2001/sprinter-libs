@@ -81,14 +81,15 @@ class AbiTests(unittest.TestCase):
         self.assertIn("ld (.copy_size+1),a", tile)
         self.assertRegex(
             tile,
-            r"ld d,d\s+\.copy_size:\s+ld a,8\s+ld l,l",
+            r"ld d,d\s+\.copy_size:\s+ld a,16\s+ld l,l",
         )
 
     def test_config_is_mode_82_packed_4bpp(self) -> None:
         source = (ROOT / "gfx640.asm").read_text()
         payload = source.split("config_payload:", 1)[1]
         self.assertRegex(payload, r"db #82[^\n]*\n\s*dw 640,256")
-        self.assertRegex(payload, r"db 16,32")
+        self.assertRegex(payload, r"db 32,16")
+        self.assertIn("ld ix,#01ff", source)
         self.assertIn("row_buffer:     ds 320", source)
         self.assertLessEqual((ROOT / "GFX640.DLL").stat().st_size, 16384)
         runtime_tool = (ROOT / "tools" / "prepare_runtime_image.py").read_text()
@@ -150,11 +151,39 @@ class AbiTests(unittest.TestCase):
         tile = source.split("draw_tile_sized_target_ready:", 1)[1].split(
             "; Span descriptor:", 1
         )[0]
-        self.assertIn("ld a,8", tile)
-        self.assertIn("add a,8", tile)
-        self.assertIn("ld a,32", source.split("draw_tile_target_ready:", 1)[1][:160])
-        self.assertIn("ld de,625", source)
-        self.assertIn("add a,32", source)
+        self.assertIn("ld a,16", tile)
+        self.assertIn("add a,16", tile)
+        self.assertIn("ld a,16", source.split("draw_tile_target_ready:", 1)[1][:160])
+        self.assertIn("ld de,609", source)
+        self.assertIn("ld de,32", source)
+
+    def test_transparent_row_is_unrolled(self) -> None:
+        source = (ROOT / "gfx640.asm").read_text()
+        row = source.split(".bytes16:", 1)[1].split(".row_done:", 1)[0]
+        self.assertEqual(16, row.count("DRAW_NIBBLE_KEY_BYTE"))
+        self.assertNotIn("djnz", row.lower())
+        byte = source.split("macro DRAW_NIBBLE_KEY_BYTE", 1)[1].split("endm", 1)[0]
+        self.assertIn("cp #ff\n        jr z,.write_byte", byte)
+        self.assertIn("cp #f0\n        jr nc,.left_key", byte)
+        self.assertIn("inc a\n        and #0f", byte)
+        self.assertIn("ld a,(de)", byte)
+        exact = source.split("draw_tile_transparent_sized_target_ready:", 1)[1].split(
+            "transparent_width_table:", 1
+        )[0]
+        self.assertRegex(exact, r"bit 3,a\s+jp z,draw_tile_sized_target_ready")
+        self.assertIn("ld (.dest_load+1),hl", exact)
+        self.assertIn("ld iyl,a", exact)
+        self.assertIn("ld iyh,a", exact)
+        self.assertNotIn("push bc", exact.lower())
+        self.assertNotIn("push iy", exact.lower())
+        self.assertNotIn("pop bc", exact.lower())
+        self.assertNotIn("pop iy", exact.lower())
+        self.assertNotIn("draw_tile_batch_target_ready", source)
+        self.assertEqual(4, source.count("call select_batch_renderer"))
+        fast = source.split("draw_tile_sized_target_ready:", 1)[1].split(
+            "; Exact per-pixel keying", 1
+        )[0]
+        self.assertNotIn("ld a,(de)", fast)
 
     def test_entry_numbers_are_frozen(self) -> None:
         values = equates()
@@ -168,6 +197,12 @@ class AbiTests(unittest.TestCase):
             "GFX_SCROLL_RECT": 33,
             "GFX_DRAW_TILE_LIST": 34,
             "GFX_DRAW_TILE_CLIP": 35,
+            "GFX_DRAW_TILE_TRANSPARENT": 36,
+            "GFX_DRAW_TILE_CLIP_TRANSPARENT": 37,
+            "GFX_DRAW_TILE_SPAN_TRANSPARENT": 38,
+            "GFX_DRAW_TILE_LIST_TRANSPARENT": 39,
+            "GFX_DRAW_TILEMAP_TRANSPARENT": 40,
+            "GFX_DRAW_METATILE_TRANSPARENT": 41,
         }
         self.assertEqual(expected, {name: values[name] for name in expected})
 
@@ -186,8 +221,8 @@ class AbiTests(unittest.TestCase):
     def test_dispatch_table_has_all_entries(self) -> None:
         source = (ROOT / "gfx640.asm").read_text()
         dispatch = re.findall(r"^\s+jp\s+([a-zA-Z0-9_]+)\s+;\s*(\d+)", source, re.MULTILINE)
-        self.assertEqual(list(range(36)), [int(number) for _, number in dispatch[:36]])
-        reserved = {int(number) for label, number in dispatch[:36] if label == "gfx_reserved"}
+        self.assertEqual(list(range(42)), [int(number) for _, number in dispatch[:42]])
+        reserved = {int(number) for label, number in dispatch[:42] if label == "gfx_reserved"}
         self.assertEqual({3, 19, 20}, reserved)
 
     def test_fade_accumulator_reaches_exact_endpoints(self) -> None:

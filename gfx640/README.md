@@ -7,10 +7,10 @@
 and the two screen buffers still occupy 320 bytes per scanline at offsets
 `#000` and `#140`.
 
-The ABI deliberately mirrors GFX320: the same 36 entry numbers, register
-assignments, descriptor sizes, target/source flags, page table, palette and
-fade interfaces. It is a separate implementation; GFX320 remains an 8bpp
-mode-`#81` library.
+The ABI deliberately mirrors GFX320 for entries `0..35`, register assignments,
+descriptor sizes, target/source flags, page table, palette and fade interfaces.
+Entries `36..41` add exact per-pixel tile transparency. It is a separate
+implementation; GFX320 remains an 8bpp mode-`#81` library.
 
 ## Deliverables
 
@@ -39,6 +39,10 @@ mode-`#81` library.
 - `GFX_KEY_FF` keeps its hardware byte meaning: `#FF` skips a pair of colour-15
   pixels. Solid primitives reject KEY. `put_pixel(KEY_FF, color=15)` is a
   successful no-op.
+- The `*_TRANSPARENT` tile entries extend KEY to individual nibbles: `#F?` and
+  `#?F` preserve the corresponding destination pixel from the DRAM mirror,
+  while `#FF` still uses the hardware key. Without KEY they use the ordinary
+  accelerated path and colour 15 is opaque.
 - A partial `GFX_VRAM_ONLY` write gets the untouched neighbour nibble from the
   DRAM mirror. Consequently, a neighbour previously changed only in VRAM can
   be restored from the mirror. This is intentional ABI behaviour.
@@ -55,11 +59,11 @@ provided in `gfx640.inc`.
 
 ## Tiles
 
-A tile is 16×32 pixels, or 32 rows of eight packed bytes, always 256 bytes.
+A tile is 32×16 pixels, or 16 rows of sixteen packed bytes, always 256 bytes.
 There are 64 tile slots in a 16-KB page and `TileRef` remains `(slot,page)`.
-The full screen grid is 40×8 tiles. Safe full-tile drawing accepts
-`x<=624`, `y<=224` and even X; `draw_tile_clip` clips only the right and
-bottom edges while retaining an eight-byte source stride.
+The full screen grid is 20×16 tiles. Safe full-tile drawing accepts
+`x<=608`, `y<=240` and even X; clipped entries clip only the right and bottom
+edges while retaining a sixteen-byte source stride.
 
 The packer accepts indexed PNG/BMP input whose pixel indices are all `0..15`:
 
@@ -69,8 +73,9 @@ python3 gfx640/tools/tilepack.py assets.png build/tiles \
   --metatile-width 2 --metatile-height 2
 ```
 
-For keyed output it rejects a single transparent pixel in a packed pair.
-Nonempty-row masks are 32-bit, and each emitted page is exactly 16 KB.
+For keyed output each colour-15 pixel is transparent, including only one half
+of a packed pair. Nonempty-row masks are little-endian 16-bit values, and each
+emitted page is exactly 16 KB.
 
 ## Calling and building
 
@@ -101,7 +106,7 @@ frame ISR should only update a flag/counter; call `gfx_swap_buffers` and
 ## Hardware verification
 
 Run `GFX640.EXE` beside the matching DLL. It selects `#82` and covers packed
-nibbles at X=`638/639`, primitives, opaque/keyed and clipped tiles, span/list/
-map/metatile drawing, copy/move/scroll, mirror restore, both buffers and
+nibbles at X=`638/639`, primitives, opaque/hardware-keyed/exact-transparent and
+clipped tiles, span/list/map/metatile drawing, copy/move/scroll, both buffers and
 palette/fade. Rendering changes still require a real Sprinter check; use
 [BENCHMARK.md](BENCHMARK.md) for the DI-budget measurement.

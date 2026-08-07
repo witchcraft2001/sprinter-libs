@@ -81,6 +81,10 @@ gfx_u8 gfx640_draw_tile_span(const gfx640_tile_span_t *span) { return descriptor
 gfx_u8 gfx640_draw_tile_list(const gfx640_tile_list_t *list) { return descriptor_call(GFX_DRAW_TILE_LIST, list); }
 gfx_u8 gfx640_draw_tilemap(const gfx640_tilemap_t *map) { return descriptor_call(GFX_DRAW_TILEMAP, map); }
 gfx_u8 gfx640_draw_metatile(const gfx640_metatile_t *metatile) { return descriptor_call(GFX_DRAW_METATILE, metatile); }
+gfx_u8 gfx640_draw_tile_span_transparent(const gfx640_tile_span_t *span) { return descriptor_call(GFX_DRAW_TILE_SPAN_TRANSPARENT, span); }
+gfx_u8 gfx640_draw_tile_list_transparent(const gfx640_tile_list_t *list) { return descriptor_call(GFX_DRAW_TILE_LIST_TRANSPARENT, list); }
+gfx_u8 gfx640_draw_tilemap_transparent(const gfx640_tilemap_t *map) { return descriptor_call(GFX_DRAW_TILEMAP_TRANSPARENT, map); }
+gfx_u8 gfx640_draw_metatile_transparent(const gfx640_metatile_t *metatile) { return descriptor_call(GFX_DRAW_METATILE_TRANSPARENT, metatile); }
 gfx_u8 gfx640_draw_rect(const gfx640_rect_t *rect) { return descriptor_call(GFX_DRAW_RECT, rect); }
 gfx_u8 gfx640_line(const gfx640_line_t *line) { return descriptor_call(GFX_LINE, line); }
 gfx_u8 gfx640_move_rect(const gfx640_copy_rect_t *rect) { return descriptor_call(GFX_MOVE_RECT, rect); }
@@ -151,6 +155,14 @@ gfx_u8 gfx640_draw_tile_fast(gfx_u16 ref, gfx_u16 x, gfx_u8 y, gfx_u8 flags) {
 
 gfx_u8 gfx640_draw_tile_clip(gfx_u16 ref, gfx_u16 x, gfx_u8 y, gfx_u8 flags) {
     return tile_call(GFX_DRAW_TILE_CLIP, ref, x, y, flags);
+}
+
+gfx_u8 gfx640_draw_tile_transparent(gfx_u16 ref, gfx_u16 x, gfx_u8 y, gfx_u8 flags) {
+    return tile_call(GFX_DRAW_TILE_TRANSPARENT, ref, x, y, flags);
+}
+
+gfx_u8 gfx640_draw_tile_clip_transparent(gfx_u16 ref, gfx_u16 x, gfx_u8 y, gfx_u8 flags) {
+    return tile_call(GFX_DRAW_TILE_CLIP_TRANSPARENT, ref, x, y, flags);
 }
 
 gfx_u8 gfx640_put_pixel(gfx_u16 x, gfx_u8 y, gfx_u8 color, gfx_u8 flags) {

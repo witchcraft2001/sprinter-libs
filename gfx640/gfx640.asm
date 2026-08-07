@@ -1,4 +1,4 @@
-; GFX640.DLL — accelerated packed-4bpp graphics and 16x32 row-major tiles
+; GFX640.DLL — accelerated packed-4bpp graphics and 32x16 row-major tiles
 ; for DSS mode #82. Screen coordinates are always expressed in pixels;
 ; accelerator and VRAM addresses are expressed in packed bytes.
 ; Public ABI is described in specs.md.
@@ -58,6 +58,12 @@ gfx_image_start:
         jp gfx_scroll_rect          ; 33
         jp gfx_draw_tile_list       ; 34
         jp gfx_draw_tile_clip       ; 35
+        jp gfx_draw_tile_transparent ; 36
+        jp gfx_draw_tile_clip_transparent ; 37
+        jp gfx_draw_tile_span_transparent ; 38
+        jp gfx_draw_tile_list_transparent ; 39
+        jp gfx_draw_tilemap_transparent ; 40
+        jp gfx_draw_metatile_transparent ; 41
 
 ; constants
 ; Keep these values byte-exact with gfx640.inc and specs.md.  #01..#0f are
@@ -84,6 +90,42 @@ GFX_DI_BUDGET_US equ 200
         endif
 
         include "../common/accelerator.inc"
+
+; One packed byte is two pixels. C keeps the source byte while B is scratch.
+; The high-nibble test handles every #F? byte; the incremented low-nibble
+; test handles #?F without a second mask/compare pair.
+        macro DRAW_NIBBLE_KEY_BYTE
+        ld a,(hl)
+        ld c,a
+        cp #ff
+        jr z,.write_byte           ; hardware key skips both pixels
+        cp #f0
+        jr nc,.left_key
+        inc a
+        and #0f
+        jr z,.right_key
+        ld a,c                     ; neither pixel is transparent
+        jr .write_byte
+.left_key:
+        ld a,(de)                  ; reads always come from the DRAM shadow
+        and #f0
+        ld b,a
+        ld a,c
+        and #0f
+        or b
+        jr .write_byte
+.right_key:
+        ld a,(de)
+        and #0f
+        ld b,a
+        ld a,c
+        and #f0
+        or b
+.write_byte:
+        ld (de),a
+        inc hl
+        inc de
+        endm
 
 ; ---- core and configuration -------------------------------------------------
 
@@ -217,7 +259,7 @@ configure_vram_port:
 
 gfx_get_version:
         ld de,#0100
-        ld ix,#00ff                ; all ABI 1.0 capability groups implemented
+        ld ix,#01ff                ; all ABI 1.0 capability groups implemented
         xor a
         ret
 
@@ -2035,7 +2077,7 @@ scroll_fill_current_rect:
         xor a
         ret
 
-; ---- 16x32 packed-4bpp row-major tiles -------------------------------------
+; ---- 32x16 packed-4bpp row-major tiles -------------------------------------
 ; DE TileRef: D logical page, E slot. IX=x, IYH=0, IYL=y, A flags.
 gfx_draw_tile:
         call tile_prefetch_safe
@@ -2043,11 +2085,33 @@ gfx_draw_tile:
         ret nz
         jp draw_tile_prefetched
 
+gfx_draw_tile_transparent:
+        call tile_prefetch_safe
+        or a
+        ret nz
+        ld a,(tile_flags)
+        call resolve_target
+        or a
+        ret nz
+        jp draw_tile_transparent_target_ready
+
 gfx_draw_tile_fast:
         call tile_prefetch_fast
         jp draw_tile_prefetched
 
 gfx_draw_tile_clip:
+        push af
+        xor a
+        ld (single_transparent),a
+        pop af
+        jr draw_tile_clip_common
+
+gfx_draw_tile_clip_transparent:
+        push af
+        ld a,1
+        ld (single_transparent),a
+        pop af
+draw_tile_clip_common:
         call tile_prefetch_clip
         or a
         ret nz
@@ -2055,9 +2119,9 @@ gfx_draw_tile_clip:
         call resolve_target
         or a
         ret nz
-        ld a,8
+        ld a,16
         ld (tile_draw_width),a
-        ld a,32
+        ld a,16
         ld (tile_draw_rows),a
         ld hl,640
         ld de,(tile_x)
@@ -2069,17 +2133,20 @@ gfx_draw_tile_clip:
         or a
         jr nz,.vertical_clip
         ld a,l
-        cp 9
+        cp 17
         jr nc,.vertical_clip
 .store_width:
         ld (tile_draw_width),a
 .vertical_clip:
         ld a,(tile_y)
-        cp 225
+        cp 241
         jr c,.draw
-        neg                         ; 256-y, valid for y=225..255
+        neg                         ; 256-y, valid for y=241..255
         ld (tile_draw_rows),a
-.draw:  jp draw_tile_sized_target_ready
+.draw:  ld a,(single_transparent)
+        or a
+        jp nz,draw_tile_transparent_sized_target_ready
+        jp draw_tile_sized_target_ready
 
 tile_prefetch_safe:
         ld (tile_flags),a
@@ -2107,7 +2174,7 @@ tile_prefetch_safe:
         pop hl
         bit 0,l
         jr nz,.bad
-        ld de,625                 ; x<=624 is the last full 16-pixel tile
+        ld de,609                 ; x<=608 is the last full 32-pixel tile
         or a
         sbc hl,de
         jr nc,.bad
@@ -2116,7 +2183,7 @@ tile_prefetch_safe:
         or a
         jr nz,.bad
         ld a,iyl
-        cp 225
+        cp 241
         jr nc,.bad
         xor a
         ret
@@ -2193,9 +2260,9 @@ draw_tile_prefetched:
         ; Fall through only after destination/alias have been resolved.  Batch
         ; entries use this shared target state and skip the repeated resolver.
 draw_tile_target_ready:
-        ld a,8
+        ld a,16
         ld (tile_draw_width),a
-        ld a,32
+        ld a,16
         ld (tile_draw_rows),a
 draw_tile_sized_target_ready:
         call check_tile_windows
@@ -2224,17 +2291,17 @@ draw_tile_sized_target_ready:
         ld b,a
 .row:   ld a,c
         out (YPORT),a
-        ; OFF ends the previous command, therefore the 8-byte block size
+        ; OFF ends the previous command, therefore the 16-byte block size
         ; must be latched again for every row (proven spevosdk sequence).
         ld d,d
 .copy_size:
-        ld a,8
+        ld a,16
         ld l,l
         ld a,(hl)
         ld (de),a
         ld b,b                    ; mandatory completion/idle
         ld a,l
-        add a,8                   ; next 8-byte packed row
+        add a,16                  ; next 16-byte packed row
         ld l,a
         inc c
         djnz .row
@@ -2245,8 +2312,149 @@ draw_tile_sized_target_ready:
         xor a
         ret
 
+; Exact per-pixel keying. Without GFX_KEY_FF the accelerator remains the fast
+; path. With it, #FF is still submitted to the hardware key alias while #F?
+; and #?F read the destination shadow and merge only the opaque nibble.
+draw_tile_transparent_target_ready:
+        ld a,16
+        ld (tile_draw_width),a
+        ld a,16
+        ld (tile_draw_rows),a
+draw_tile_transparent_sized_target_ready:
+        ld a,(tile_flags)
+        bit 3,a
+        jp z,draw_tile_sized_target_ready
+        call check_tile_windows
+        or a
+        ret nz
+        ld a,(tile_draw_width)
+        ld b,a
+        ld a,16
+        sub b
+        ld (tile_source_skip),a
+        ld a,b
+        dec a
+        add a,a
+        ld e,a
+        ld d,0
+        ld hl,transparent_width_table
+        add hl,de
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (.row_jump+1),de
+        call enter_di
+        in a,(PAGEPORT0)
+        ld (saved_win0_page),a
+        ld a,(tile_page)
+        out (PAGEPORT0),a
+        call map_vram
+        ld hl,(tile_x)
+        srl h
+        rr l
+        ld a,(tile_y)
+        call make_dest
+        ld (.dest_load+1),hl       ; fixed destination column for every row
+        ld a,(tile_slot)
+        ld h,a
+        ld l,0                      ; source tile is exactly one 256-byte slot
+        ld a,(tile_y)
+        ld iyl,a
+        ld a,(tile_draw_rows)
+        ld iyh,a
+.row:  ld a,iyl
+        out (YPORT),a
+.dest_load:
+        ld de,0
+.row_jump:
+        jp 0                        ; patched once per tile from draw width
+.bytes16:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes15:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes14:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes13:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes12:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes11:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes10:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes9:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes8:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes7:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes6:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes5:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes4:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes3:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes2:
+        DRAW_NIBBLE_KEY_BYTE
+.bytes1:
+        DRAW_NIBBLE_KEY_BYTE
+.row_done:
+        ld a,(tile_source_skip)
+        add a,l
+        ld l,a                      ; advance by 16 even for a clipped row
+        inc iyl
+        dec iyh
+        jp nz,.row
+        call unmap_vram
+        ld a,(saved_win0_page)
+        out (PAGEPORT0),a
+        call leave_di
+        xor a
+        ret
+
+transparent_width_table:
+        dw draw_tile_transparent_sized_target_ready.bytes1
+        dw draw_tile_transparent_sized_target_ready.bytes2
+        dw draw_tile_transparent_sized_target_ready.bytes3
+        dw draw_tile_transparent_sized_target_ready.bytes4
+        dw draw_tile_transparent_sized_target_ready.bytes5
+        dw draw_tile_transparent_sized_target_ready.bytes6
+        dw draw_tile_transparent_sized_target_ready.bytes7
+        dw draw_tile_transparent_sized_target_ready.bytes8
+        dw draw_tile_transparent_sized_target_ready.bytes9
+        dw draw_tile_transparent_sized_target_ready.bytes10
+        dw draw_tile_transparent_sized_target_ready.bytes11
+        dw draw_tile_transparent_sized_target_ready.bytes12
+        dw draw_tile_transparent_sized_target_ready.bytes13
+        dw draw_tile_transparent_sized_target_ready.bytes14
+        dw draw_tile_transparent_sized_target_ready.bytes15
+        dw draw_tile_transparent_sized_target_ready.bytes16
+
+; Select the batch renderer once.  The three loop call operands are patched
+; before entering a batch, so each tile pays only the direct CALL cost.
+select_batch_renderer:
+        ld hl,draw_tile_target_ready
+        ld a,(batch_transparent)
+        or a
+        jr z,.store
+        ld hl,draw_tile_transparent_target_ready
+.store:
+        ld (draw_tile_list_common.batch_call+1),hl
+        ld (draw_span_loop.batch_call+1),hl
+        ld (draw_grid.batch_call+1),hl
+        ret
+
 ; Span descriptor: TileRef*, count, x, y, flags (8 bytes).
 gfx_draw_tile_span:
+        xor a
+        ld (batch_transparent),a
+        jr draw_tile_span_common
+gfx_draw_tile_span_transparent:
+        ld a,1
+        ld (batch_transparent),a
+draw_tile_span_common:
         ld a,(de)
         ld (batch_ptr),a
         inc de
@@ -2277,15 +2485,15 @@ gfx_draw_tile_span:
         ld a,h
         or l
         jp z,gfx_batch_done
-        ; A 16-pixel span can contain at most 40 whole tiles in 640 pixels.
+        ; A 32-pixel span can contain at most 20 whole tiles in 640 pixels.
         ld a,h
         or a
         jr nz,.bad
         ld a,l
-        cp 41
+        cp 21
         jr nc,.bad
         ld a,(tile_y)
-        cp 225
+        cp 241
         jr nc,.bad
         ld hl,(batch_count)
         add hl,hl
@@ -2296,17 +2504,19 @@ gfx_draw_tile_span:
         add hl,hl
         add hl,hl
         add hl,hl
-        add hl,hl                  ; count * 16
+        add hl,hl
+        add hl,hl                  ; count * 32
         ld de,(tile_x)
         add hl,de
         ld de,641
         or a
         sbc hl,de
-        jr nc,.bad                 ; x + count*16 <= 640
+        jr nc,.bad                 ; x + count*32 <= 640
         ld a,(tile_flags)
         call resolve_target
         or a
         ret nz
+        call select_batch_renderer
         xor a
         ld (batch_page_valid),a
         jp draw_span_loop
@@ -2315,6 +2525,13 @@ gfx_draw_tile_span:
 
 ; List descriptor: item*, count, common flags, reserved[3]; item=TileRef,x,y.
 gfx_draw_tile_list:
+        xor a
+        ld (batch_transparent),a
+        jr draw_tile_list_common
+gfx_draw_tile_list_transparent:
+        ld a,1
+        ld (batch_transparent),a
+draw_tile_list_common:
         ld a,(de)
         ld (batch_ptr),a
         inc de
@@ -2356,6 +2573,7 @@ gfx_draw_tile_list:
         call resolve_target
         or a
         ret nz
+        call select_batch_renderer
         xor a
         ld (batch_page_valid),a
 .next:  ld hl,(batch_count)
@@ -2380,6 +2598,7 @@ gfx_draw_tile_list:
         call batch_prefetch_safe
         or a
         ret nz
+.batch_call:
         call draw_tile_target_ready
         or a
         ret nz
@@ -2407,11 +2626,12 @@ draw_span_loop:
         call batch_prefetch_safe
         or a
         ret nz
+.batch_call:
         call draw_tile_target_ready
         or a
         ret nz
         ld hl,(tile_x)
-        ld de,16
+        ld de,32
         add hl,de
         ld (tile_x),hl
         ld hl,(batch_count)
@@ -2421,6 +2641,13 @@ draw_span_loop:
 
 ; DE -> GfxTilemap (20-byte packed descriptor).
 gfx_draw_tilemap:
+        xor a
+        ld (batch_transparent),a
+        jr draw_tilemap_common
+gfx_draw_tilemap_transparent:
+        ld a,1
+        ld (batch_transparent),a
+draw_tilemap_common:
         ld a,(de)
         ld (grid_base_ptr),a
         inc de
@@ -2493,6 +2720,7 @@ gfx_draw_tilemap:
         call resolve_target
         or a
         ret nz
+        call select_batch_renderer
         xor a
         ld (batch_page_valid),a
         jp draw_grid
@@ -2501,6 +2729,13 @@ gfx_draw_tilemap:
 
 ; DE -> GfxMetatile (8-byte packed descriptor).
 gfx_draw_metatile:
+        xor a
+        ld (batch_transparent),a
+        jr draw_metatile_common
+gfx_draw_metatile_transparent:
+        ld a,1
+        ld (batch_transparent),a
+draw_metatile_common:
         ld a,(de)
         ld (grid_base_ptr),a
         inc de
@@ -2553,6 +2788,7 @@ gfx_draw_metatile:
         call resolve_target
         or a
         ret nz
+        call select_batch_renderer
         ld hl,(grid_base_ptr)
         ld (grid_ptr),hl
         xor a
@@ -2651,11 +2887,12 @@ validate_grid_destination:
         or a
         jr nz,.bad
         ld a,l
-        cp 41
+        cp 21
         jr nc,.bad
         ld a,(grid_x)
         bit 0,a
         jr nz,.bad
+        add hl,hl
         add hl,hl
         add hl,hl
         add hl,hl
@@ -2672,9 +2909,8 @@ validate_grid_destination:
         or a
         jr nz,.bad
         ld a,l
-        cp 9
+        cp 17
         jr nc,.bad
-        add hl,hl
         add hl,hl
         add hl,hl
         add hl,hl
@@ -2769,11 +3005,12 @@ draw_grid:
         call batch_prefetch_safe
         or a
         ret nz
+.batch_call:
         call draw_tile_target_ready
         or a
         ret nz
         ld hl,(tile_x)
-        ld de,16
+        ld de,32
         add hl,de
         ld (tile_x),hl
         ld hl,(grid_cols_left)
@@ -2794,7 +3031,7 @@ draw_grid:
         jr c,.argument
         ld (grid_row_ptr),hl
         ld a,(tile_y)
-        add a,32
+        add a,16
         ld (tile_y),a
         jr .row
 .argument:
@@ -2814,13 +3051,13 @@ batch_prefetch_safe:
         ld hl,(tile_x)
         bit 0,l
         jr nz,.arg
-        ld de,625
+        ld de,609
         or a
         sbc hl,de
         jr nc,.arg
 .x_ok:
         ld a,(tile_y)
-        cp 225
+        cp 241
         jr nc,.arg
         ld a,(page_table_valid)
         or a
@@ -2888,6 +3125,9 @@ tile_y:         db 0
 tile_flags:     db 0
 tile_draw_width: db 16
 tile_draw_rows: db 16
+tile_source_skip: db 0
+single_transparent: db 0
+batch_transparent: db 0
 batch_ptr:      dw 0
 batch_count:    dw 0
 batch_page_valid: db 0
@@ -2994,8 +3234,8 @@ config_payload:
         db 0                     ; source window is fixed WIN0
         db 0                     ; code window (updated by gfx_get_config)
         db 1                     ; GFX_MAPPING_SOURCE_WIN0
-        dw #00ff                ; implemented capabilities
-        db 16,32
+        dw #01ff                ; implemented capabilities
+        db 32,16
         db 0                     ; GFX_TILE_ROW_MAJOR
         db 0                     ; reserved
 
