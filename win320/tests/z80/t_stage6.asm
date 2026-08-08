@@ -88,7 +88,9 @@ choice_window:
         dw 8,8,224,124
         db #ff,WIN_WND_NOPANEL,CHOICE_ITEM_COUNT,0
         dw choice_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 
 choice_track:
         dw choice_window,0

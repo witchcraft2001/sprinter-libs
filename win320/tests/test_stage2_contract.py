@@ -20,13 +20,20 @@ class Stage2ContractTests(unittest.TestCase):
         ):
             body = STAGE2.split(entry, 1)[1].split(following, 1)[0]
             self.assertIn("call s2_set_window_origin", body)
-            self.assertGreaterEqual(body.count("call s2_restore_origin"), 2)
+            restore_calls = len(
+                re.findall(r"(?:call|jp) s2_restore_origin(?:_keep_a)?\b", body)
+            )
+            self.assertGreaterEqual(restore_calls, 2)
 
     def test_disabled_button_uses_internal_scratch(self) -> None:
         button = STAGE2.split("s2_process_item:", 1)[1].split(
             "s2_process_zone:", 1
         )[0]
-        self.assertIn("ld hl,button_scratch", button)
+        self.assertIn("call s1_copy_button_block", button)
+        copy_block = STAGE1.split("s1_copy_button_block:", 1)[1].split(
+            "s1_copy_label_block:", 1
+        )[0]
+        self.assertIn("ld hl,button_scratch", copy_block)
         self.assertIn("or WIN_BTN_DISABLED", button)
         self.assertIn("call s1_button_loaded", button)
         self.assertIn("call s4_publish_button_focus", button)
@@ -76,7 +83,7 @@ class Stage2ContractTests(unittest.TestCase):
         item = STAGE2.split("s2_validate_item:", 1)[1].split(
             "s2_process_item:", 1
         )[0]
-        self.assertIn("call s4_validate_window_focus", header)
+        self.assertIn("s4_validate_window_focus", header)
         self.assertIn("s2_window_ptr", header)
         self.assertIn("WIN_IT_FOCUSABLE", item)
         self.assertIn("cp WIN_T_RADIOBUTTON+1", item)
@@ -114,18 +121,24 @@ class Stage2ContractTests(unittest.TestCase):
         )
 
     def test_mapping_restores_port_pages_and_iff_in_order(self) -> None:
+        # The port/VRAM restore is shared with stage1 via s1_unmap_vram_core.
+        core = STAGE1.split("s1_unmap_vram_core:", 1)[1].split(
+            "s1_unmap_vram:", 1
+        )[0]
+        core_sequence = ["ld a,#c0", "out (YPORT),a", "ld a,(saved_vram_page)"]
+        position = 0
+        for token in core_sequence:
+            found = core.find(token, position)
+            self.assertNotEqual(-1, found, token)
+            position = found + len(token)
+
         unmap = STAGE2.split("s2_unmap_backstore_row:", 1)[1].split(
             "s2_copy_row_mapped:", 1
         )[0]
-        sequence = [
-            "ld a,#c0",
-            "out (YPORT),a",
-            "ld a,(saved_vram_page)",
-            "ld a,(saved_data_page)",
-            "jp s1_restore_iff",
-        ]
+        self.assertIn("call s1_unmap_vram_core", unmap)
+        tail_sequence = ["ld a,(saved_data_page)", "jp s1_restore_iff"]
         position = 0
-        for token in sequence:
+        for token in tail_sequence:
             found = unmap.find(token, position)
             self.assertNotEqual(-1, found, token)
             position = found + len(token)

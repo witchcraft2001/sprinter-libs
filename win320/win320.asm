@@ -1,4 +1,4 @@
-; WIN320.DLL — ABI 1.1 controls.
+; WIN320.DLL — ABI 2.0 controls.
 ; Public ABI is described in specs.md and win320.inc.
 
         ifndef WIN320_TEST_BUILD
@@ -10,7 +10,7 @@ win_image_base:
         dw 0,0,0,0
         db 30,7
         dw 2026
-        dw #0002                    ; implementation 0.2, public ABI is 1.1
+        dw #0002                    ; implementation 0.2, public ABI is 2.0
         db "WIN320 GUI",0
         ds 16-11,0
 
@@ -112,18 +112,18 @@ win_init:
         rlca
         ld (code_window),a
         call select_data_window
-        jp c,.window_error
+        jr c,.window_error
 
         ld b,1
         ld c,DSS_GETMEM
         call win_dss_call
-        jp c,.memory_error
+        jr c,.memory_error
         ld (font_block),a
         ld b,1
         ld hl,font_page
         ld c,BIOS_GETMEMBLKPAGES
         call win_bios_call
-        jp c,.memory_cleanup
+        jr c,.memory_cleanup
 
         ; win_load_font uses the same read/copy/validate path.  Keeping only
         ; one implementation also leaves room for ABI-compatible extensions.
@@ -213,8 +213,8 @@ win_set_screen:
         jp win_error_argument
 
 win_get_version:
-        ld d,1
-        ld e,1
+        ld d,2
+        ld e,0
         ld ix,WIN_CAP_CORE|WIN_CAP_EDIT|WIN_CAP_LISTBOX|WIN_CAP_SCROLLBAR|WIN_CAP_PROGRESS|WIN_CAP_ICON|WIN_CAP_FOCUS|WIN_CAP_PASCAL_STR|WIN_CAP_CHECKBOX|WIN_CAP_RADIOBUTTON
         xor a
         ret
@@ -253,6 +253,7 @@ win_get_config:
         include "stage2.inc"
         include "stage3.inc"
         include "stage4.inc"
+        include "stage7.inc"
 win_reserved:
         ld a,WIN_ERR_UNSUPPORTED
         or a
@@ -475,30 +476,15 @@ read_payload:
 
 validate_wf32_header:
         ld hl,io_scratch
-        ld a,(hl)
-        cp 'W'
+        ld de,wf32_magic
+        ld b,6
+.check:
+        ld a,(de)
+        cp (hl)
         jr nz,.bad
         inc hl
-        ld a,(hl)
-        cp 'F'
-        jr nz,.bad
-        inc hl
-        ld a,(hl)
-        cp '3'
-        jr nz,.bad
-        inc hl
-        ld a,(hl)
-        cp '2'
-        jr nz,.bad
-        inc hl
-        ld a,(hl)
-        cp WF32_VERSION
-        jr nz,.bad
-        inc hl
-        ld a,(hl)
-        cp FONT320_HEIGHT
-        jr nz,.bad
-        inc hl
+        inc de
+        djnz .check
         ld e,(hl)
         inc hl
         ld d,(hl)
@@ -518,6 +504,8 @@ validate_wf32_header:
 .bad:
         scf
         ret
+
+wf32_magic: db 'WF32',WF32_VERSION,FONT320_HEIGHT
 
 copy_scratch_to_font:
         push hl

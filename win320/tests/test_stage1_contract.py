@@ -21,7 +21,7 @@ class Stage1ContractTests(unittest.TestCase):
         values = [int(token[1:], 16) if token.startswith("#") else int(token)
                   for token in tokens]
         self.assertEqual([15, 7, 8, 1, 0, 7, 15, 0,
-                          1, 15, 7, 1, 7, 1, 15, 0], values)
+                          1, 15, 7, 1, 7, 1, 15, 1, 15, 0], values)
 
         palette = STAGE1.split("s1_style_palette_mapped:", 1)[1].split(
             "; A=EGA colour index", 1
@@ -103,8 +103,8 @@ class Stage1ContractTests(unittest.TestCase):
         self.assertIn("dw 1,255,256,257,320", HARNESS)
         self.assertIn("call win_invert_rect", HARNESS)
         self.assertGreaterEqual(HARNESS.count("call win_invert_rect"), 2)
-        self.assertIn("ld de,6", STAGE1)
-        self.assertIn("ld de,10", STAGE1)
+        self.assertIn("ld a,6", STAGE1)
+        self.assertIn("ld a,10", STAGE1)
         self.assertIn("call s1_clip_text", STAGE1)
         self.assertIn("are adjacent at y=20 and y=21", HARNESS)
 
@@ -119,18 +119,25 @@ class Stage1ContractTests(unittest.TestCase):
         self.assertNotIn("ld de,(fill_h)", choose)
 
     def test_mapping_restores_vram_then_data_and_port_y(self) -> None:
+        # The port/VRAM restore is shared with s1_unmap_vram via
+        # s1_unmap_vram_core; s1_unmap_pair calls it before restoring data.
+        core = STAGE1.split("s1_unmap_vram_core:", 1)[1].split(
+            "s1_unmap_vram:", 1
+        )[0]
+        core_sequence = ["ld a,#c0", "out (YPORT),a", "ld a,(saved_vram_page)"]
+        position = 0
+        for token in core_sequence:
+            found = core.find(token, position)
+            self.assertNotEqual(-1, found, token)
+            position = found + len(token)
+
         unmap = STAGE1.split("s1_unmap_pair:", 1)[1].split(
             "; ---- geometry validation", 1
         )[0]
-        sequence = [
-            "ld a,#c0",
-            "out (YPORT),a",
-            "ld a,(saved_vram_page)",
-            "ld a,(saved_data_page)",
-            "jp s1_restore_iff",
-        ]
+        self.assertIn("call s1_unmap_vram_core", unmap)
+        tail_sequence = ["ld a,(saved_data_page)", "jp s1_restore_iff"]
         position = 0
-        for token in sequence:
+        for token in tail_sequence:
             found = unmap.find(token, position)
             self.assertNotEqual(-1, found, token)
             position = found + len(token)

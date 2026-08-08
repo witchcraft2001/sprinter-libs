@@ -1,6 +1,6 @@
 # WIN320.DLL
 
-ABI 1.1 build of the lightweight 320×256 GUI library described in
+ABI 2.0 build of the lightweight 320×256 GUI library described in
 [`specs.md`](specs.md). The release implements entries 0–38: lifecycle, fonts,
 accelerated primitives, declarative windows, dirty
 updates, modal backstore, and `win_poll`, `win_track`, `win_wait_release`, and
@@ -17,6 +17,14 @@ focus, redraw, and `WIN_EV_CHANGE` are handled by the library. Radio groups
 are scoped to one `WinWindow` and count as one Tab stop. Applications can
 still change `WIN_CH_CHECKED` directly, mark the matching `WinItem` dirty,
 and call `win_update`.
+
+ABI 2.0 adds an optional window title bar and close button, both properties
+of `WinWindow` rather than declarative items. Setting `title` paints a strip
+with a clipped, themeable label; adding `WIN_WND_CLOSE` also draws a close
+glyph and makes the tracker report `WIN_EV_CLOSE` on a full press/release
+inside it. Neither `win_draw` nor `win_open` writes to the screen if the
+title/close/size combination is invalid. This is a breaking ABI change:
+`WinWindow` and `WinTheme` grew and `win_get_version` now reports 2.0.
 
 The libman 1.2 L0 prefix has a hard 16-KiB code-plus-relocation limit. Stage 5
 therefore ships as a fixed overlay after the embedded font. `win_init` selects

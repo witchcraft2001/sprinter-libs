@@ -34,7 +34,7 @@ $(FONT_WF32): ../afnt320/font.bin ../afnt320/tools/font_to_accel.py
 	mkdir -p $(BUILD)
 	$(PYTHON) ../afnt320/tools/font_to_accel.py --wf32 $< $@
 
-$(PREFIX): win320.asm stage1.inc stage2.inc stage3.inc stage4.inc stage5_stub.inc win320.inc win320_layout.inc ../common/fontlayout.inc \
+$(PREFIX): win320.asm stage1.inc stage2.inc stage3.inc stage4.inc stage5_stub.inc stage7.inc win320.inc win320_layout.inc ../common/fontlayout.inc \
 		../common/textcore320.inc
 	mkdir -p $(BUILD)
 	$(LIBMAN_MKDLL) build win320.asm --format l0 --target 1.2 \

@@ -33,9 +33,7 @@ win_track:
         ld (s3_track_ptr),de
         xor a
         ld (s3_track_cursor),a
-        ld bc,WIN_TRACK_SIZE
-        ld hl,s3_track_scratch
-        call s1_copy_caller_block
+        call s1_copy_track_block
         jr nz,.setup_done
         call s3_preflight
         jr nz,.setup_done
@@ -126,16 +124,15 @@ win_wait_release:
 ; E=0 arrow, 1 wait, #ff custom (IX=&WinCursor).  LOAD only: no HALT and no
 ; cursor visibility change are hidden in this entry.
 win_set_cursor:
-        push af
         push bc
         push de
         push hl
         push ix
         ld a,e
         or a
-        jp z,.arrow
+        jr z,.arrow
         cp 1
-        jp z,.wait
+        jr z,.wait
         cp #ff
         jp nz,.argument
         push ix
@@ -146,22 +143,22 @@ win_set_cursor:
         jp nz,.argument
         ld a,(s3_cursor_scratch+WIN_CUR_WIDTH)
         or a
-        jp z,.argument
+        jr z,.argument
         cp 33
-        jp nc,.argument
+        jr nc,.argument
         ld b,a
         ld a,(s3_cursor_scratch+WIN_CUR_HEIGHT)
         or a
-        jp z,.argument
+        jr z,.argument
         cp 33
-        jp nc,.argument
+        jr nc,.argument
         ld c,a
         ld a,(s3_cursor_scratch+WIN_CUR_HOT_X)
         cp b
-        jp nc,.argument
+        jr nc,.argument
         ld a,(s3_cursor_scratch+WIN_CUR_HOT_Y)
         cp c
-        jp nc,.argument
+        jr nc,.argument
         ; width*height is at most 1024 here; BIOS accepts at most 256.
         ld a,b
         ld e,c
@@ -172,22 +169,13 @@ win_set_cursor:
         ld a,l
         or a
         jr z,.argument
+        ld b,h                      ; exact byte count for s1_validate_caller_range
+        ld c,l
         ; IX still points at the caller header.  Pixel range starts at +4.
         push ix
         pop hl
         ld de,WIN_CURSOR_SIZE
         add hl,de
-        ld (s3_cursor_pixels),hl
-        ; Recompute exact byte count for s1_validate_caller_range.
-        ld a,(s3_cursor_scratch+WIN_CUR_WIDTH)
-        ld b,a
-        ld a,(s3_cursor_scratch+WIN_CUR_HEIGHT)
-        ld e,a
-        ld a,b
-        call s3_mul8
-        ld b,h
-        ld c,l
-        ld hl,(s3_cursor_pixels)
         call s1_validate_caller_range
         jr c,.argument
         ld a,(s3_cursor_scratch+WIN_CUR_HEIGHT)
@@ -220,7 +208,6 @@ win_set_cursor:
         pop hl
         pop de
         pop bc
-        pop af
         xor a
         ret
 .bios_error:
@@ -228,7 +215,6 @@ win_set_cursor:
         pop hl
         pop de
         pop bc
-        pop af
         ld a,WIN_ERR_UNSUPPORTED
         scf
         ret
@@ -237,7 +223,6 @@ win_set_cursor:
         pop hl
         pop de
         pop bc
-        pop af
         ld a,WIN_ERR_ARGUMENT
         scf
         ret
@@ -248,9 +233,7 @@ win_set_cursor:
 ; and state were never copied back to the caller.
 s3_poll:
         ld (s3_track_ptr),de
-        ld bc,WIN_TRACK_SIZE
-        ld hl,s3_track_scratch
-        call s1_copy_caller_block
+        call s1_copy_track_block
         jr nz,.argument
         call s3_preflight
         jr nz,.return_error
@@ -307,14 +290,12 @@ s3_preflight:
         and #e0
         jr nz,.bad
         call s3_validate_keys
-        or a
         ret nz
         ld de,(s3_track_scratch+WIN_TRK_WINDOW)
         ld a,d
         or e
         ret z
         call s2_load_window
-        or a
         ret nz
         jp s3_validate_items
 .bad:
@@ -365,10 +346,8 @@ s3_validate_items:
 
 s3_validate_item:
         call s2_validate_item
-        or a
         ret nz
         call s6_validate_choice_item
-        or a
         ret nz
         ld a,(item_scratch+WIN_ITEM_TYPE)
         or a
@@ -376,11 +355,7 @@ s3_validate_item:
         xor a
         ret
 .control:
-        call s2_load_control_geometry
-        or a
-        ret nz
-        call s2_validate_geometry_screen
-        or a
+        call s2_check_control_geometry
         ret nz
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_HIT
@@ -420,14 +395,7 @@ s3_mouse_iteration:
         ld a,(s3_track_scratch+WIN_TRK_STATE+S3_ST_INIT_XH)
         bit 7,a
         jr nz,.initialized
-        ld a,(s3_mouse_x+1)
-        and 1
-        or #80
-        ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_INIT_XH),a
-        ld a,(s3_mouse_x)
-        ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_XL),a
-        ld a,(s3_mouse_y)
-        ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_Y),a
+        call s3_store_state_pos
         ld a,(s3_mouse_buttons)
         ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_BUTTONS),a
         ld a,(s3_current_hit)
@@ -464,14 +432,7 @@ s3_mouse_iteration:
 .rehit:
         call s3_find_hit
 .actions:
-        ld a,(s3_mouse_x+1)
-        and 1
-        or #80
-        ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_INIT_XH),a
-        ld a,(s3_mouse_x)
-        ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_XL),a
-        ld a,(s3_mouse_y)
-        ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_Y),a
+        call s3_store_state_pos
         ld a,(s3_current_hit)
         ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_HIT),a
         call s3_left_action
@@ -485,9 +446,26 @@ s3_mouse_iteration:
         or a
         ret
 
+; Store the current mouse x/y into WinTrack state (INIT_XH/XL/Y fields).
+s3_store_state_pos:
+        ld a,(s3_mouse_x+1)
+        and 1
+        or #80
+        ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_INIT_XH),a
+        ld a,(s3_mouse_x)
+        ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_XL),a
+        ld a,(s3_mouse_y)
+        ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_Y),a
+        ret
+
 ; A full reverse-order common-header hit test.  Half-open edges mean the
 ; right/bottom border belongs to the next object, never both.
 s3_find_hit:
+        call s7_chrome_hit
+        jr nc,.scan
+        ld (s3_current_hit),a
+        ret
+.scan:
         ld a,#ff
         ld (s3_current_hit),a
         ld a,(window_scratch+WIN_WND_COUNT)
@@ -503,7 +481,6 @@ s3_find_hit:
         cp WIN_IT_HIT
         jr nz,.next
         call s6_choice_enabled
-        or a
         jr nz,.next
         call s2_load_control_geometry
         jr nz,.next
@@ -560,14 +537,13 @@ s3_left_action:
         ld a,(s3_mouse_buttons)
         bit 0,a
         jp z,.released
-        ld b,a
         ld a,(s3_track_scratch+WIN_TRK_STATE+S3_ST_BUTTONS)
         bit 0,a
         jr nz,.held
-        ld a,(s3_current_hit)
-        ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_CAPTURE),a
         xor a
         ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_REPEAT),a
+        ld a,(s3_current_hit)
+        ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_CAPTURE),a
         cp #ff
         jr nz,.press_item
         ld a,(s3_track_scratch+WIN_TRK_OPTIONS)
@@ -596,8 +572,17 @@ s3_left_action:
         jr nz,.paint
         ld b,1
 .paint:
+        ; Redraw (and the SHOW_CUR hide/show pair inside it) only on an actual
+        ; press/release transition, not every idle tick while simply held:
+        ; repeated same-state hide/show at a stationary position was found to
+        ; corrupt the focus ring. s3_press_value already tracks what was last
+        ; drawn (set by s3_set_pressed_index on every call, B is always 0/1).
+        ld a,(s3_press_value)
+        cp b
+        jr z,.skip_paint
         ld a,(s3_capture_index)
         call s3_set_pressed_index
+.skip_paint:
         ld a,(s3_capture_index)
         call s3_index_is_repeat
         ret nc
@@ -643,6 +628,8 @@ s3_left_action:
         ld a,(s3_track_scratch+WIN_TRK_STATE+S3_ST_CAPTURE)
         cp #ff
         jr z,.clear
+        cp #fd
+        jr nc,.chrome_release
         ld (s3_capture_index),a
         ld b,0
         call s3_set_pressed_index
@@ -657,6 +644,20 @@ s3_left_action:
         ld a,WIN_EV_LCLICK
         call s3_emit_capture
 .clear:
+        jp s3_clear_capture
+.chrome_release:
+        cp #fe
+        jr nz,.clear                 ; strip: absorb without an event
+        ld b,0
+        call s3_set_pressed_index    ; unpress the close button visual
+        ld a,(s3_current_hit)
+        cp #fe
+        jr nz,.clear                 ; released outside the button: cancel
+        call s3_clear_capture
+        ld a,WIN_EV_CLOSE
+        jp s3_emit_outside
+
+s3_clear_capture:
         ld a,#ff
         ld (s3_track_scratch+WIN_TRK_STATE+S3_ST_CAPTURE),a
         xor a
@@ -728,7 +729,7 @@ s3_keyboard_iteration:
         ld (s3_track_scratch+WIN_TRK_KEY_MODS),a
         call s4_keyboard_focus
         ret c
-        jp s3_find_key
+        jr s3_find_key
 
 ; C=set on a selected hotkey/any-key event.
 s3_find_key:
@@ -825,7 +826,7 @@ s3_emit_current:
         ld a,(s3_current_hit)
         ld (s3_event_index),a
         ld a,(s3_pending_event)
-        jp s3_emit_index
+        jr s3_emit_index
 
 s3_emit_capture:
         ld (s3_pending_event),a
@@ -851,7 +852,6 @@ s3_emit_index:
         jr .focused
 .normal_click:
         call s4_focus_click
-        or a
         jr z,.focused
         ld (s3_runtime_error),a
         scf
@@ -886,8 +886,18 @@ s3_emit_outside:
         scf
         ret
 
+; Chrome sentinels (#fd strip, #fe close button) have no backing WinItem;
+; report a type/flags that never match REPEAT or HOVER instead of indexing
+; the array with a wild offset.
 s3_load_event_item:
         ld a,(s3_event_index)
+        cp #fd
+        jr c,.item
+        xor a
+        ld (item_scratch+WIN_ITEM_TYPE),a
+        ld (item_scratch+WIN_ITEM_FLAGS),a
+        ret
+.item:
         jp s2_load_item_index
 
 ; WIN_IT_PRESS has an intrinsic visual effect only for WIN_T_BUTTON.  The
@@ -897,8 +907,14 @@ s3_load_event_item:
 ; A=item index, B=0 released / non-zero pressed.
 s3_set_pressed_index:
         ld (s3_event_index),a
+        ld c,a
         ld a,b
         ld (s3_press_value),a
+        ld a,c
+        cp #fe
+        jr z,.chrome_button
+        cp #fd
+        jr nc,.done                  ; strip (or any other sentinel): no visual
         call s3_load_event_item
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_PRESS
@@ -908,10 +924,12 @@ s3_set_pressed_index:
         jr nz,.done
         ld de,(item_scratch+WIN_ITEM_CONTROL)
         ld (s3_button_ptr),de
-        ld bc,WIN_BUTTON_SIZE
-        ld hl,button_scratch
-        call s1_copy_caller_block
+        call s1_copy_button_block
         jr nz,.done
+        jr .flags
+.chrome_button:
+        call s7_stage_close_button
+.flags:
         ld a,(button_scratch+WIN_BTN_FLAGS)
         ld b,a
         ld a,(s3_press_value)
@@ -945,6 +963,9 @@ s3_set_pressed_index:
         ld c,1
         call win_mouse_call
 .publish:
+        ld a,(s3_event_index)
+        cp #fe
+        jr z,.done                   ; chrome: no caller descriptor to update
         ld a,(s3_button_draw_error)
         or a
         jr nz,.done
@@ -1018,7 +1039,6 @@ s3_button_draw_error:  db 0
 s3_cursor_hidden:      db 0
 s3_runtime_error:      db 0
 s3_cursor_scratch      equ path_scratch
-s3_cursor_pixels:      dw 0
 s3_track_scratch:      ds WIN_TRACK_SIZE,0
 
 ; Exact gfxview BIOS cursor payloads: arrow 9x13, wait 9x14.

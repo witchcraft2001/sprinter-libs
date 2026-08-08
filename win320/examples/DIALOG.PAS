@@ -1,4 +1,4 @@
-{ WIN320 ABI 1.1 Turbo Pascal example. Build with the Sprinter TPC library }
+{ WIN320 ABI 2.0 Turbo Pascal example. Build with the Sprinter TPC library }
 { search path and place WIN320.DLL beside the resulting executable.         }
 program WinDialog;
 {$I DSSCORE.INC}
@@ -15,13 +15,13 @@ var
   OkText, CancelText : string[8];
   Row0, Row1, Row2 : string[16];
   Rows : array[0..2] of integer;
-  TitleLabel, StatusLabel : TWinLabel;
+  StatusLabel : TWinLabel;
   EditBox : TWinEdit;
   OkButton, CancelButton : TWinButton;
   Scrollbar : TWinScrollbar;
   Listbox : TWinListbox;
   DirectMarker : TWinRect;
-  Items : array[0..6] of TWinItem;
+  Items : array[0..5] of TWinItem;
   Window : TWinWindow;
   Track : TWinTrack;
 
@@ -48,9 +48,6 @@ begin
   Row0 := 'First row'; Row1 := 'Second row'; Row2 := 'Third row';
   Rows[0] := addr(Row0); Rows[1] := addr(Row1); Rows[2] := addr(Row2);
 
-  TitleLabel.X := 12; TitleLabel.Y := 10; TitleLabel.Width := 232;
-  TitleLabel.Height := 8; TitleLabel.Attr := $FF;
-  TitleLabel.Flags := WinLabelCenter; TitleLabel.Text := addr(TitleText);
   StatusLabel.X := 12; StatusLabel.Y := 184; StatusLabel.Width := 232;
   StatusLabel.Height := 8; StatusLabel.Attr := $FF;
   StatusLabel.Flags := WinLabelCenter; StatusLabel.Text := addr(StatusReady);
@@ -83,17 +80,17 @@ begin
   Listbox.Scrollbar := addr(Scrollbar);
   Listbox.LastFirst := -1; Listbox.LastCursor := -1;
 
-  SetItem(0, WinTypeLabel, 0, $FF, addr(TitleLabel));
-  SetItem(1, WinTypeEdit, WinItemHit or WinItemFocusable, 10, addr(EditBox));
-  SetItem(2, WinTypeListbox, WinItemHit or WinItemFocusable, 11, addr(Listbox));
-  SetItem(3, WinTypeScrollbar, WinItemHit or WinItemRepeat, 12, addr(Scrollbar));
-  SetItem(4, WinTypeButton, WinItemHit or WinItemFocusable, 1, addr(OkButton));
-  SetItem(5, WinTypeButton, WinItemHit or WinItemFocusable, 2, addr(CancelButton));
-  SetItem(6, WinTypeLabel, 0, $FF, addr(StatusLabel));
+  SetItem(0, WinTypeEdit, WinItemHit or WinItemFocusable, 10, addr(EditBox));
+  SetItem(1, WinTypeListbox, WinItemHit or WinItemFocusable, 11, addr(Listbox));
+  SetItem(2, WinTypeScrollbar, WinItemHit or WinItemRepeat, 12, addr(Scrollbar));
+  SetItem(3, WinTypeButton, WinItemHit or WinItemFocusable, 1, addr(OkButton));
+  SetItem(4, WinTypeButton, WinItemHit or WinItemFocusable, 2, addr(CancelButton));
+  SetItem(5, WinTypeLabel, 0, $FF, addr(StatusLabel));
 
   Window.X := 32; Window.Y := 20; Window.Width := 256; Window.Height := 216;
-  Window.Color := $FF; Window.Flags := 0; Window.Count := 7;
+  Window.Color := $FF; Window.Flags := WinWindowClose; Window.Count := 6;
   Window.Focus := 2; Window.Items := addr(Items);
+  Window.Title := addr(TitleText); Window.TitleAttr := $FF;
   Window.LastFocus := $FF; Window.Reserved := 0;
 
   DirectMarker.X := 22; DirectMarker.Y := 222; DirectMarker.Width := 16;
@@ -121,13 +118,14 @@ begin
     repeat
       StatusCode := WinPollCall(H, Track);
       if (StatusCode = 0) and (Track.EventCode <> WinEventNone) and
-         (Track.Id <> 2) then
+         (Track.EventCode <> WinEventClose) and (Track.Id <> 2) then
       begin
         StatusLabel.Text := addr(StatusChanged);
-        Items[6].Flags := WinItemDirty;
+        Items[5].Flags := WinItemDirty;
         StatusCode := WinUpdateCall(H, Window, Drawn)
       end
-    until (StatusCode <> 0) or (Track.Id = 2)
+    until (StatusCode <> 0) or (Track.Id = 2) or
+          (Track.EventCode = WinEventClose)
   end;
   if LibFree(H) then;
 end.

@@ -21,7 +21,7 @@ byte_at() {
 }
 
 cd "$repo_root"
-for stage in stage0 stage1 stage2 stage3 stage4 stage5 stage6; do
+for stage in stage0 stage1 stage2 stage3 stage4 stage5 stage6 stage7; do
     src="$repo_root/tests/z80/t_${stage}.asm"
     bin="$build_dir/t_${stage}.bin"
     dump="$build_dir/t_${stage}.out"

@@ -2,11 +2,11 @@
 #include <stddef.h>
 
 typedef char assert_regs_size[(sizeof(win320_regs_t) == 7) ? 1 : -1];
-typedef char assert_theme_size[(sizeof(win_theme_t) == 16) ? 1 : -1];
+typedef char assert_theme_size[(sizeof(win_theme_t) == 18) ? 1 : -1];
 typedef char assert_rect_size[(sizeof(win_rect_t) == 10) ? 1 : -1];
 typedef char assert_label_size[(sizeof(win_label_t) == 12) ? 1 : -1];
 typedef char assert_button_size[(sizeof(win_button_t) == 12) ? 1 : -1];
-typedef char assert_window_size[(sizeof(win_window_t) == 16) ? 1 : -1];
+typedef char assert_window_size[(sizeof(win_window_t) == 20) ? 1 : -1];
 typedef char assert_item_size[(sizeof(win_item_t) == 8) ? 1 : -1];
 typedef char assert_key_size[(sizeof(win_key_t) == 4) ? 1 : -1];
 typedef char assert_track_size[(sizeof(win_track_t) == 32) ? 1 : -1];
@@ -22,7 +22,9 @@ typedef char assert_config_size[(sizeof(win_config_t) == 20) ? 1 : -1];
 typedef char assert_rect_color_offset[(offsetof(win_rect_t, color) == 8) ? 1 : -1];
 typedef char assert_label_text_offset[(offsetof(win_label_t, text) == 10) ? 1 : -1];
 typedef char assert_window_items_offset[(offsetof(win_window_t, items) == 12) ? 1 : -1];
-typedef char assert_window_last_focus_offset[(offsetof(win_window_t, last_focus) == 14) ? 1 : -1];
+typedef char assert_window_title_offset[(offsetof(win_window_t, title) == 14) ? 1 : -1];
+typedef char assert_window_title_attr_offset[(offsetof(win_window_t, title_attr) == 16) ? 1 : -1];
+typedef char assert_window_last_focus_offset[(offsetof(win_window_t, last_focus) == 17) ? 1 : -1];
 typedef char assert_item_control_offset[(offsetof(win_item_t, control) == 4) ? 1 : -1];
 typedef char assert_track_mouse_x_offset[(offsetof(win_track_t, mouse_x) == 10) ? 1 : -1];
 typedef char assert_track_item_offset[(offsetof(win_track_t, item) == 18) ? 1 : -1];

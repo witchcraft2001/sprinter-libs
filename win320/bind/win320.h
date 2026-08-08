@@ -33,7 +33,7 @@ enum {
     WIN_LABEL_CLIP = 0x08,
     WIN_BTN_GLYPH = 0x01, WIN_BTN_FOCUS = 0x02,
     WIN_BTN_PRESSED = 0x04, WIN_BTN_DISABLED = 0x08,
-    WIN_WND_NOPANEL = 0x01, WIN_WND_SUNKEN = 0x02,
+    WIN_WND_NOPANEL = 0x01, WIN_WND_SUNKEN = 0x02, WIN_WND_CLOSE = 0x04,
     WIN_IT_DIRTY = 0x01, WIN_IT_HIDDEN = 0x02,
     WIN_IT_DISABLED = 0x04, WIN_IT_HIT = 0x08,
     WIN_IT_FOCUSABLE = 0x10, WIN_IT_PRESS = 0x20,
@@ -63,8 +63,12 @@ enum {
 enum {
     WIN_EV_NONE = 0, WIN_EV_LCLICK, WIN_EV_RCLICK, WIN_EV_REPEAT,
     WIN_EV_HOTKEY, WIN_EV_KEY, WIN_EV_HOVER, WIN_EV_LEAVE,
-    WIN_EV_OUTSIDE, WIN_EV_FOCUS, WIN_EV_CHANGE
+    WIN_EV_OUTSIDE, WIN_EV_FOCUS, WIN_EV_CHANGE, WIN_EV_CLOSE
 };
+
+/* Window title bar geometry, shared by drawing and hit-testing. */
+#define WIN_TITLE_H 14
+#define WIN_TITLE_CLOSE_GLYPH 'X'
 
 enum {
     WIN_ED_ENTER = 0, WIN_ED_ESC, WIN_ED_TAB, WIN_ED_MOUSE,
@@ -96,7 +100,7 @@ typedef struct {
     win_u8 light, shadow, face, desktop, text, text_disabled;
     win_u8 field_bg, field_fg, cursor_bg, cursor_fg;
     win_u8 progress, progress_fill, scroll_track, scroll_thumb;
-    win_u8 focus_mask, reserved;
+    win_u8 focus_mask, title_bg, title_fg, reserved;
 } win_theme_t;
 
 typedef struct {
@@ -120,7 +124,10 @@ typedef struct {
     win_u16 x, y, width, height;
     win_u8 color, flags, count, focus;
     win_ptr_t items;
-    win_u8 last_focus, reserved;
+    win_ptr_t title;      /* pointer to title text; 0 = no title bar */
+    win_u8 title_attr;    /* bg:fg nibbles, #ff = theme title colours */
+    win_u8 last_focus;
+    win_u16 reserved;
 } win_window_t;
 
 typedef struct {

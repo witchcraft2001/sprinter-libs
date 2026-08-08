@@ -65,9 +65,9 @@ class Stage6ContractTests(unittest.TestCase):
         self.assertIn("WIN_CH_RESERVED", load)
         self.assertIn("WIN_T_CHECKBOX", load)
         self.assertIn("WIN_CH_GROUP", load)
-        self.assertIn("ld de,13", load)
-        self.assertIn("ld de,10", load)
-        self.assertEqual(2, load.count("sbc hl,de"))
+        self.assertIn("ld a,13", load)
+        self.assertIn("ld a,10", load)
+        self.assertEqual(2, load.count("call s1_hl_minus_a"))
 
         render = STAGE6.split("s6_render_choice:", 1)[1].split(
             "; Remove the four square", 1
@@ -180,12 +180,12 @@ class Stage6ContractTests(unittest.TestCase):
         runner = (ROOT / "tools" / "run_z80_tests.sh").read_text()
         self.assertIn("stage4 stage5 stage6", runner)
 
-    def test_version_path_advertises_abi_11(self) -> None:
+    def test_version_path_advertises_abi_20(self) -> None:
         version = ASM.split("win_get_version:", 1)[1].split(
             "win_get_config:", 1
         )[0]
-        self.assertIn("ld d,1", version)
-        self.assertIn("ld e,1", version)
+        self.assertIn("ld d,2", version)
+        self.assertIn("ld e,0", version)
         self.assertIn("WIN_CAP_CHECKBOX|WIN_CAP_RADIOBUTTON", version)
 
     def test_visual_showcase_has_two_groups_disabled_and_live_state(self) -> None:

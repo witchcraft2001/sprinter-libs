@@ -100,7 +100,7 @@ class Stage4ContractTests(unittest.TestCase):
         self.assertIn("call s4_publish_last_focus", STAGE2)
         self.assertIn("call s4_item_needs_focus_redraw", STAGE2)
         self.assertIn("call s4_sync_item_focus", STAGE2)
-        self.assertIn("jp z,s4_edit_draw_item", STAGE2)
+        self.assertIn("dw s4_edit_draw_item", STAGE2)
         self.assertIn("call s4_keyboard_focus", STAGE3)
         self.assertIn("call s4_focus_click", STAGE3)
         self.assertIn("WIN_TRK_TAB_FOCUS", STAGE4)

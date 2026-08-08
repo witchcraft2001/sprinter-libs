@@ -1,4 +1,4 @@
-{ WIN320.DLL ABI 1.1 binding for Sprinter Turbo Pascal.                 }
+{ WIN320.DLL ABI 2.0 binding for Sprinter Turbo Pascal.                 }
 { Include DSSCORE.INC, DSSFILE.INC, DSSSYS.INC and LIBMAN.INC first.    }
 { This compiler stores record fields byte-packed; all addresses are u16. }
 
@@ -28,7 +28,7 @@ const
   WinLabelAlignMask = $03; WinLabelFill = $04;     WinLabelClip = $08;
   WinButtonGlyph = $01;   WinButtonFocus = $02;
   WinButtonPressed = $04; WinButtonDisabled = $08;
-  WinWindowNoPanel = $01; WinWindowSunken = $02;
+  WinWindowNoPanel = $01; WinWindowSunken = $02;   WinWindowClose = $04;
 
   WinTypeNone = 0;        WinTypeLabel = 1;        WinTypeFill = 2;
   WinTypeFrame = 3;       WinTypePanel = 4;        WinTypeSeparator = 5;
@@ -45,7 +45,10 @@ const
   WinEventNone = 0;       WinEventLClick = 1;      WinEventRClick = 2;
   WinEventRepeat = 3;     WinEventHotkey = 4;      WinEventKey = 5;
   WinEventHover = 6;      WinEventLeave = 7;       WinEventOutside = 8;
-  WinEventFocus = 9;      WinEventChange = 10;
+  WinEventFocus = 9;      WinEventChange = 10;     WinEventClose = 11;
+
+  { Window title bar geometry, shared by drawing and hit-testing. }
+  WinTitleH = 14;         WinTitleCloseGlyph = 'x';
 
   WinEditFrame = $01;     WinEditFocus = $02;      WinEditPassword = $04;
   WinEditEnter = 0;       WinEditEsc = 1;          WinEditTab = 2;
@@ -68,7 +71,7 @@ type
     Light, Shadow, Face, Desktop, Text, TextDisabled : byte;
     FieldBg, FieldFg, CursorBg, CursorFg : byte;
     Progress, ProgressFill, ScrollTrack, ScrollThumb : byte;
-    FocusMask, Reserved : byte
+    FocusMask, TitleBg, TitleFg, Reserved : byte
   end;
 
   TWinRect = record
@@ -92,7 +95,10 @@ type
     X, Y, Width, Height : integer;
     Color, Flags, Count, Focus : byte;
     Items : integer;
-    LastFocus, Reserved : byte
+    Title : integer;      { pointer to title text; 0 = no title bar }
+    TitleAttr : byte;     { bg:fg nibbles, $FF = theme title colours }
+    LastFocus : byte;
+    Reserved : integer
   end;
 
   TWinItem = record

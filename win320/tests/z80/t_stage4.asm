@@ -92,7 +92,9 @@ focus_window:
         dw 20,20,140,70
         db #ff,WIN_WND_NOPANEL,3,0
         dw focus_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 
 focus_track:
         dw focus_window,0
@@ -357,6 +359,9 @@ start:
         endif
         ifdef WIN320_STAGE6_TEST
         call test_stage6
+        endif
+        ifdef WIN320_STAGE7_TEST
+        call test_stage7
         endif
         call t_end
         halt

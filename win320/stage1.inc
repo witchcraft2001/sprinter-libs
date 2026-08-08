@@ -10,7 +10,6 @@ win_load_font:
         ex de,hl
         ld de,path_scratch
         call s1_copy_path
-        or a
         ret nz
         ; Retry deferred cleanup before another replacement can overwrite a
         ; retained block id. The active font remains untouched on failure.
@@ -19,7 +18,7 @@ win_load_font:
         call s1_release_old_font
         jp c,.memory
         call select_data_window
-        jp c,.window
+        jr c,.window
 
         ld hl,path_scratch
         ld a,1
@@ -237,15 +236,18 @@ win_set_theme:
         call s1_copy_caller_block
         ret nz
         ld hl,theme_scratch
-        ld b,14
+        ld b,17
 .colors:
+        ld a,b
+        cp 3                        ; focus mask (index 14) is a full byte
+        jr z,.skip_role
         ld a,(hl)
         cp 16
         jr nc,.bad
+.skip_role:
         inc hl
         djnz .colors
-        inc hl                      ; focus mask is a full byte
-        ld a,(hl)
+        ld a,(hl)                   ; reserved must be 0
         or a
         jr nz,.bad
         ld hl,theme_scratch
@@ -294,6 +296,24 @@ s1_copy_caller_block:
         ret
 .bad:
         jp win_error_argument
+
+; DE=caller. Copies WIN_BUTTON_SIZE bytes into button_scratch.
+s1_copy_button_block:
+        ld bc,WIN_BUTTON_SIZE
+        ld hl,button_scratch
+        jp s1_copy_caller_block
+
+; DE=caller. Copies WIN_LABEL_SIZE bytes into label_scratch.
+s1_copy_label_block:
+        ld bc,WIN_LABEL_SIZE
+        ld hl,label_scratch
+        jp s1_copy_caller_block
+
+; DE=caller. Copies WIN_TRACK_SIZE bytes into s3_track_scratch.
+s1_copy_track_block:
+        ld bc,WIN_TRACK_SIZE
+        ld hl,s3_track_scratch
+        jp s1_copy_caller_block
 
 ; HL=start, BC=size. Reject wrap and any byte in the DLL's CPU window.
 s1_validate_caller_range:
@@ -613,16 +633,22 @@ s1_map_vram:
         ld a,VIDEO_PAGE
         jp s1_write_page_c
 
-s1_unmap_vram:
+; Restore YPORT=#c0 and the VRAM page from saved_vram_page. Tail-calls into
+; s1_write_page_c, so callers reach it via `call` and get a normal return.
+s1_unmap_vram_core:
         ld a,#c0
         out (YPORT),a
         ld a,(resolved_vram_port)
         ld c,a
         ld a,(saved_vram_page)
-        call s1_write_page_c
+        jp s1_write_page_c
+
+s1_unmap_vram:
+        call s1_unmap_vram_core
         jp s1_restore_iff
 
-s1_map_pair:
+; Save IFF and both current work-window pages (data then VRAM).
+s1_save_pair_pages:
         call s1_save_iff
         ld a,(resolved_data_port)
         ld c,a
@@ -632,6 +658,10 @@ s1_map_pair:
         ld c,a
         call s1_read_page_c
         ld (saved_vram_page),a
+        ret
+
+s1_map_pair:
+        call s1_save_pair_pages
         ld a,(resolved_data_port)
         ld c,a
         ld a,(font_page)
@@ -649,19 +679,50 @@ s1_map_pair:
         ret
 
 s1_unmap_pair:
-        ld a,#c0
-        out (YPORT),a
-        ld a,(resolved_vram_port)
-        ld c,a
-        ld a,(saved_vram_page)
-        call s1_write_page_c
+        call s1_unmap_vram_core
         ld a,(resolved_data_port)
         ld c,a
         ld a,(saved_data_page)
         call s1_write_page_c
         jp s1_restore_iff
 
+; A=WIN_RC_SUNKEN-masked rect_flags -> panel_sunken, falls through.
+s1_draw_sunken_hl:
+        ld a,(rect_flags)
+        and WIN_RC_SUNKEN
+        ld (panel_sunken),a
+
+; HL=address of a X_mapped renderer to invoke between map/unmap. Resolves
+; and maps the VRAM window, calls the renderer via a patched operand,
+; unmaps, and returns success. Not reentrant: the renderer must not call
+; back into this helper.
+s1_draw_mapped_hl:
+        ld (.dispatch+1),hl
+        call s1_resolve_vram
+        ret nz
+        call s1_map_vram
+.dispatch:
+        call 0
+        call s1_unmap_vram
+        xor a
+        ret
+
 ; ---- geometry validation ---------------------------------------------------
+
+; HL -= 2. Carry set means HL was below 2 (matches sbc hl,de semantics).
+s1_hl_minus_2:
+        ld de,2
+        or a
+        sbc hl,de
+        ret
+
+; HL -= A (zero-extended). Carry set means HL was below A.
+s1_hl_minus_a:
+        ld e,a
+        ld d,0
+        or a
+        sbc hl,de
+        ret
 
 ; A=allowed WinRect flags, DE=caller descriptor.
 s1_load_rect:
@@ -675,7 +736,7 @@ s1_load_rect:
         ld a,(rect_allowed_flags)
         cpl
         and b
-        jp nz,s1_rect_unsupported
+        jr nz,s1_rect_unsupported
         ld a,b
         ld (rect_flags),a
         ld a,(rect_scratch+WIN_RC_COLOR)
@@ -738,7 +799,7 @@ s1_require_frame_size:
         ld hl,(rect_h)
         ld a,h
         or a
-        jp nz,.ok
+        jr nz,.ok
         ld a,l
         cp 2
         jr c,.bad
@@ -748,16 +809,21 @@ s1_require_frame_size:
 .bad:
         jp win_error_argument
 
-; A=descriptor color, B=theme role. Output A=palette byte #F0..#FF.
-s1_resolve_palette_color:
-        cp #ff
-        jr nz,.explicit
-        ld a,b
+; A=index into current_theme. Returns A=current_theme[index].
+s1_theme_byte_at_a:
         ld e,a
         ld d,0
         ld hl,current_theme
         add hl,de
         ld a,(hl)
+        ret
+
+; A=descriptor color, B=theme role. Output A=palette byte #F0..#FF.
+s1_resolve_palette_color:
+        cp #ff
+        jr nz,.explicit
+        ld a,b
+        call s1_theme_byte_at_a
         jr .map
 .explicit:
         cp 16
@@ -768,6 +834,15 @@ s1_resolve_palette_color:
 .bad:
         ld a,WIN_ERR_ARGUMENT
         scf
+        ret
+
+; A=descriptor color. Resolves the WIN_TH_FACE palette byte into
+; fill_color. Carry set means the descriptor named an invalid role.
+s1_resolve_fill_color:
+        ld b,WIN_TH_FACE
+        call s1_resolve_palette_color
+        ret c
+        ld (fill_color),a
         ret
 
 ; A=descriptor full-byte XOR mask. #FF selects theme focus mask.
@@ -1069,15 +1144,11 @@ s1_copy_rect_origin_to_line:
 s1_panel_mapped:
         ; Fill only the interior; the four bevel lines own the border pixels.
         ld hl,(rect_w)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jr z,.frame
         ld (fill_w),hl
         ld hl,(rect_h)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jr z,.frame
         ld (fill_h),hl
         ld hl,(rect_x)
@@ -1110,7 +1181,6 @@ win_style:
         ld (style_clear_color),a
 .resolve:
         call s1_resolve_vram
-        or a
         ret nz
         call s1_map_vram
         ld a,(style_flags)
@@ -1220,20 +1290,14 @@ win_fill_rect:
         call s1_load_rect
         ret nz
         ld a,(rect_color)
-        ld b,WIN_TH_FACE
-        call s1_resolve_palette_color
+        call s1_resolve_fill_color
         jr c,.bad
-        ld (fill_color),a
         ld a,(rect_empty)
         or a
-        jp nz,.ok
+        jr nz,.ok
         call s1_copy_rect_to_fill
-        call s1_resolve_vram
-        or a
-        ret nz
-        call s1_map_vram
-        call s1_fill_mapped
-        call s1_unmap_vram
+        ld hl,s1_fill_mapped
+        jp s1_draw_mapped_hl
 .ok:
         xor a
         ret
@@ -1249,17 +1313,9 @@ win_frame:
         or a
         jr nz,.ok
         call s1_require_frame_size
-        or a
         ret nz
-        ld a,(rect_flags)
-        and WIN_RC_SUNKEN
-        ld (panel_sunken),a
-        call s1_resolve_vram
-        or a
-        ret nz
-        call s1_map_vram
-        call s1_frame_mapped
-        call s1_unmap_vram
+        ld hl,s1_frame_mapped
+        jp s1_draw_sunken_hl
 .ok:
         xor a
         ret
@@ -1269,25 +1325,15 @@ win_panel:
         call s1_load_rect
         ret nz
         ld a,(rect_color)
-        ld b,WIN_TH_FACE
-        call s1_resolve_palette_color
+        call s1_resolve_fill_color
         jr c,.bad
-        ld (fill_color),a
         ld a,(rect_empty)
         or a
         jr nz,.ok
         call s1_require_frame_size
-        or a
         ret nz
-        ld a,(rect_flags)
-        and WIN_RC_SUNKEN
-        ld (panel_sunken),a
-        call s1_resolve_vram
-        or a
-        ret nz
-        call s1_map_vram
-        call s1_panel_mapped
-        call s1_unmap_vram
+        ld hl,s1_panel_mapped
+        jp s1_draw_sunken_hl
 .ok:
         xor a
         ret
@@ -1301,28 +1347,23 @@ win_separator:
         ret nz
         ld a,(rect_empty)
         or a
-        jp nz,.ok
+        jr nz,.ok
         ld a,(rect_flags)
         and WIN_RC_VERTICAL
         jr nz,.vertical
         ld hl,(rect_h)
-        ld de,2
-        or a
-        sbc hl,de
-        jp nz,.bad
+        call s1_hl_minus_2
+        jr nz,.bad
         jr .size_ok
 .vertical:
         ld hl,(rect_w)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jr nz,.bad
 .size_ok:
         ld a,(rect_flags)
         and WIN_RC_SUNKEN
         ld (panel_sunken),a
         call s1_resolve_vram
-        or a
         ret nz
         call s1_map_vram
         call s1_prepare_bevel_colors
@@ -1366,7 +1407,6 @@ win_separator:
 win_invert_rect:
         xor a
         call s1_load_rect
-        or a
         ret nz
         ld a,(rect_color)
         call s1_resolve_xor_mask
@@ -1375,12 +1415,8 @@ win_invert_rect:
         or a
         jr nz,.ok
         call s1_fill_xor_scratch
-        call s1_resolve_vram
-        or a
-        ret nz
-        call s1_map_vram
-        call s1_invert_mapped
-        call s1_unmap_vram
+        ld hl,s1_invert_mapped
+        jp s1_draw_mapped_hl
 .ok:
         xor a
         ret
@@ -1485,7 +1521,6 @@ s1_invert_mapped:
 win_focus_rect:
         xor a
         call s1_load_rect
-        or a
         ret nz
         ld a,(rect_color)
         call s1_resolve_xor_mask
@@ -1494,14 +1529,9 @@ win_focus_rect:
         or a
         jr nz,.ok
         call s1_require_frame_size
-        or a
         ret nz
-        call s1_resolve_vram
-        or a
-        ret nz
-        call s1_map_vram
-        call s1_focus_mapped
-        call s1_unmap_vram
+        ld hl,s1_focus_mapped
+        jp s1_draw_mapped_hl
 .ok:
         xor a
         ret
@@ -1590,9 +1620,7 @@ s1_focus_mapped:
         ; Corners already belong to the horizontal edges. Apply the vertical
         ; checker only to the rows strictly between them.
         ld hl,(rect_h)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         ret z
         ld (focus_rows_left),hl
         ld hl,(rect_y)
@@ -1775,22 +1803,14 @@ s1_resolve_text_attr:
         cp #ff
         jr nz,.explicit
         ld a,b
-        ld e,a
-        ld d,0
-        ld hl,current_theme
-        add hl,de
-        ld a,(hl)
+        call s1_theme_byte_at_a
         rlca
         rlca
         rlca
         rlca
         ld b,a
         ld a,c
-        ld e,a
-        ld d,0
-        ld hl,current_theme
-        add hl,de
-        ld a,(hl)
+        call s1_theme_byte_at_a
         or b
         jr .store
 .explicit:
@@ -1810,24 +1830,7 @@ s1_resolve_text_attr:
 ; no-op: text still draws at x,y, while FILL uses the declared field.
 s1_validate_label_geometry:
         ld hl,label_scratch
-        ld de,rect_scratch
-        ld bc,8
-        ldir
-        ld hl,(rect_scratch+WIN_RC_WIDTH)
-        ld a,h
-        or l
-        jr nz,.height
-        inc hl
-        ld (rect_scratch+WIN_RC_WIDTH),hl
-.height:
-        ld hl,(rect_scratch+WIN_RC_HEIGHT)
-        ld a,h
-        or l
-        jr nz,.validate
-        inc hl
-        ld (rect_scratch+WIN_RC_HEIGHT),hl
-.validate:
-        call s1_load_rect_internal
+        call s1_normalize_rect_from_hl
         ret nz
         ld hl,(rect_x)
         ld (label_x),hl
@@ -1837,17 +1840,13 @@ s1_validate_label_geometry:
         ret
 
 win_label:
-        ld bc,WIN_LABEL_SIZE
-        ld hl,label_scratch
-        call s1_copy_caller_block
+        call s1_copy_label_block
         ret nz
 s1_label_loaded:
         call s1_label_prepare_loaded
-        or a
         ret nz
 s1_label_render_prepared:
         call s1_resolve_pair
-        or a
         ret nz
         call s1_map_pair
         ld a,(label_flags)
@@ -1867,7 +1866,7 @@ s1_label_render_prepared:
 s1_label_prepare_loaded:
         ld a,(label_scratch+WIN_LBL_FLAGS)
         and #f0
-        jp nz,.unsupported
+        jr nz,.unsupported
         ld a,(label_scratch+WIN_LBL_FLAGS)
         and WIN_LABEL_ALIGN_MASK
         cp 3
@@ -1881,12 +1880,11 @@ s1_label_prepare_loaded:
         jr nz,.flags_ok
         ld a,(label_flags)
         and WIN_LABEL_ALIGN_MASK
-        jp nz,.bad
+        jr nz,.bad
 .flags_ok:
         ld hl,(label_scratch+WIN_LBL_HEIGHT)
         ld (label_h),hl
         call s1_validate_label_geometry
-        or a
         ret nz
         ld a,(label_scratch+WIN_LBL_ATTR)
         ld b,WIN_TH_FACE
@@ -1895,7 +1893,6 @@ s1_label_prepare_loaded:
 
         ld hl,(label_scratch+WIN_LBL_TEXT)
         call s1_copy_public_string
-        or a
         ret nz
         ld a,(font_page)
         cp #ff
@@ -1955,11 +1952,8 @@ s1_label_fill_mapped:
         jp s1_fill_mapped
 
 win_button:
-        ld bc,WIN_BUTTON_SIZE
-        ld hl,button_scratch
-        call s1_copy_caller_block
+        call s1_copy_button_block
         ret nz
-        jp s1_button_loaded
 
 ; Draw the descriptor already copied to button_scratch. Stage 2 uses this
 ; path to derive WIN_BTN_DISABLED without mutating the caller's descriptor.
@@ -1975,28 +1969,23 @@ s1_button_loaded:
         ld a,#ff
         ld (rect_scratch+WIN_RC_COLOR),a
         call s1_load_control_rect
-        or a
         ret nz
         ld a,(rect_empty)
         or a
         jp nz,.bad
         ld hl,(rect_w)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jp c,.bad
         ld hl,(rect_h)
-        ld de,10
-        or a
-        sbc hl,de
+        ld a,10
+        call s1_hl_minus_a
         jp c,.bad
         ld a,(button_flags)
         and WIN_BTN_FOCUS
         jr z,.size_ok
         ld hl,(rect_w)
-        ld de,6
-        or a
-        sbc hl,de
+        ld a,6
+        call s1_hl_minus_a
         jp c,.bad
 .size_ok:
         ld a,(button_scratch+WIN_BTN_ATTR)
@@ -2027,7 +2016,6 @@ s1_button_loaded:
 .string:
         ld hl,(button_scratch+WIN_BTN_TEXT)
         call s1_copy_public_string
-        or a
         ret nz
 .measured:
         ld a,(font_page)
@@ -2035,11 +2023,9 @@ s1_button_loaded:
         jr z,.font
         call s1_measure_text
         call s1_validate_button_text
-        or a
         ret nz
         call s1_position_button_text
         call s1_resolve_pair
-        or a
         ret nz
         call s1_map_pair
         ld a,(button_flags)
@@ -2079,6 +2065,28 @@ s1_load_rect_internal:
         ld (rect_color),a
         jp s1_load_rect_values
 
+; HL=source WinRect-shaped 8 bytes to copy into rect_scratch, with zero
+; width/height normalized to 1 pixel before the shared range validator.
+s1_normalize_rect_from_hl:
+        ld de,rect_scratch
+        ld bc,8
+        ldir
+        ld hl,(rect_scratch+WIN_RC_WIDTH)
+        ld a,h
+        or l
+        jr nz,.height
+        inc hl
+        ld (rect_scratch+WIN_RC_WIDTH),hl
+.height:
+        ld hl,(rect_scratch+WIN_RC_HEIGHT)
+        ld a,h
+        or l
+        jr nz,.validate
+        inc hl
+        ld (rect_scratch+WIN_RC_HEIGHT),hl
+.validate:
+        jp s1_load_rect_internal
+
 ; HL points at a control whose first eight bytes are x/y/width/height.
 s1_load_control_rect:
         ld de,rect_scratch
@@ -2088,9 +2096,7 @@ s1_load_control_rect:
 
 s1_validate_button_text:
         ld hl,(rect_w)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jr c,.bad
         ld a,(button_flags)
         and WIN_BTN_FOCUS
@@ -2118,9 +2124,8 @@ s1_position_button_text:
         add hl,de
         ld (text_x),hl
         ld hl,(rect_h)
-        ld de,8
-        or a
-        sbc hl,de
+        ld a,8
+        call s1_hl_minus_a
         srl h
         rr l
         ld de,(rect_y)
@@ -2249,4 +2254,4 @@ xor_scratch             equ text_scratch
 
 default_theme:
         db 15,7,8,1,0,7,15,0
-        db 1,15,7,1,7,1,#0f,0
+        db 1,15,7,1,7,1,#0f,1,15,0

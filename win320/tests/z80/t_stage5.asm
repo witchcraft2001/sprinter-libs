@@ -438,7 +438,9 @@ s5_focus_window:
         dw 4,4,100,48
         db #ff,WIN_WND_NOPANEL,2,0
         dw s5_focus_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 s5_focus_list:
         dw 2,2,56,24
         db 8,#ff,#ff,WIN_LB_FRAME

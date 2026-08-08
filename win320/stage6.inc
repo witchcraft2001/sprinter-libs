@@ -109,15 +109,13 @@ s6_load_choice:
         jr nz,.bad
 .geometry:
         ld hl,(s6_choice_scratch+WIN_CH_WIDTH)
-        ld de,13
-        or a
-        sbc hl,de
+        ld a,13
+        call s1_hl_minus_a
         jr c,.bad
 .height:
         ld hl,(s6_choice_scratch+WIN_CH_HEIGHT)
-        ld de,10
-        or a
-        sbc hl,de
+        ld a,10
+        call s1_hl_minus_a
         jr c,.bad
 .ok:
         xor a

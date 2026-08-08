@@ -93,9 +93,11 @@ class AbiTests(unittest.TestCase):
 
     def test_stage1_structure_layout_and_flags(self) -> None:
         values = equates()
-        self.assertEqual(16, values["WIN_THEME_SIZE"])
+        self.assertEqual(18, values["WIN_THEME_SIZE"])
         self.assertEqual(14, values["WIN_TH_FOCUS_MASK"])
-        self.assertEqual(15, values["WIN_TH_RESERVED"])
+        self.assertEqual(15, values["WIN_TH_TITLE_BG"])
+        self.assertEqual(16, values["WIN_TH_TITLE_FG"])
+        self.assertEqual(17, values["WIN_TH_RESERVED"])
 
         self.assertEqual(10, values["WIN_RECT_SIZE"])
         self.assertEqual(0, values["WIN_RC_X"])
@@ -123,15 +125,18 @@ class AbiTests(unittest.TestCase):
 
     def test_stage2_structure_layout_types_flags_and_limits(self) -> None:
         values = equates()
-        self.assertEqual(16, values["WIN_WINDOW_SIZE"])
+        self.assertEqual(20, values["WIN_WINDOW_SIZE"])
         self.assertEqual(0, values["WIN_WND_X"])
         self.assertEqual(8, values["WIN_WND_COLOR"])
         self.assertEqual(10, values["WIN_WND_COUNT"])
         self.assertEqual(12, values["WIN_WND_ITEMS"])
-        self.assertEqual(14, values["WIN_WND_LAST_FOCUS"])
-        self.assertEqual(15, values["WIN_WND_RESERVED"])
+        self.assertEqual(14, values["WIN_WND_TITLE"])
+        self.assertEqual(16, values["WIN_WND_TITLE_ATTR"])
+        self.assertEqual(17, values["WIN_WND_LAST_FOCUS"])
+        self.assertEqual(18, values["WIN_WND_RESERVED"])
         self.assertEqual(0x01, values["WIN_WND_NOPANEL"])
         self.assertEqual(0x02, values["WIN_WND_SUNKEN"])
+        self.assertEqual(0x04, values["WIN_WND_CLOSE"])
 
         self.assertEqual(8, values["WIN_ITEM_SIZE"])
         self.assertEqual(0, values["WIN_ITEM_TYPE"])
@@ -203,14 +208,14 @@ class AbiTests(unittest.TestCase):
     def test_abi11_bumps_implementation_version_and_claims_features(self) -> None:
         source = (ROOT / "win320.asm").read_text()
         self.assertIn(
-            "dw #0002                    ; implementation 0.2, public ABI is 1.1",
+            "dw #0002                    ; implementation 0.2, public ABI is 2.0",
             source,
         )
         version = source.split("win_get_version:", 1)[1].split(
             "win_get_config:", 1
         )[0]
         self.assertIn(
-            "ld d,1\n        ld e,1",
+            "ld d,2\n        ld e,0",
             version,
         )
         self.assertIn(
@@ -271,12 +276,12 @@ class AbiTests(unittest.TestCase):
         self.assertEqual(12, values["WIN_REPEAT_DELAY"])
         self.assertEqual(3, values["WIN_REPEAT_RATE"])
         self.assertEqual(
-            list(range(11)),
+            list(range(12)),
             [values[name] for name in (
                 "WIN_EV_NONE", "WIN_EV_LCLICK", "WIN_EV_RCLICK",
                 "WIN_EV_REPEAT", "WIN_EV_HOTKEY", "WIN_EV_KEY",
                 "WIN_EV_HOVER", "WIN_EV_LEAVE", "WIN_EV_OUTSIDE",
-                "WIN_EV_FOCUS", "WIN_EV_CHANGE",
+                "WIN_EV_FOCUS", "WIN_EV_CHANGE", "WIN_EV_CLOSE",
             )],
         )
 

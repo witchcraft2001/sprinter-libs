@@ -54,8 +54,8 @@ WIN_WORK_AUTO            equ #ff
 WIN_TXT_ASCIIZ           equ 0
 WIN_TXT_PASCAL           equ 1
 
-; WinTheme (16 bytes).
-WIN_THEME_SIZE           equ 16
+; WinTheme (18 bytes).
+WIN_THEME_SIZE           equ 18
 WIN_TH_LIGHT             equ 0
 WIN_TH_SHADOW            equ 1
 WIN_TH_FACE              equ 2
@@ -71,7 +71,9 @@ WIN_TH_PROGRESS_FILL     equ 11
 WIN_TH_SCROLL_TRACK      equ 12
 WIN_TH_SCROLL_THUMB      equ 13
 WIN_TH_FOCUS_MASK        equ 14
-WIN_TH_RESERVED          equ 15
+WIN_TH_TITLE_BG          equ 15
+WIN_TH_TITLE_FG          equ 16
+WIN_TH_RESERVED          equ 17
 
 ; WinRect (10 bytes).
 WIN_RECT_SIZE            equ 10
@@ -114,8 +116,8 @@ WIN_BTN_FOCUS            equ #02
 WIN_BTN_PRESSED          equ #04
 WIN_BTN_DISABLED         equ #08
 
-; WinWindow (16 bytes).
-WIN_WINDOW_SIZE          equ 16
+; WinWindow (20 bytes).
+WIN_WINDOW_SIZE          equ 20
 WIN_WND_X                equ 0
 WIN_WND_Y                equ 2
 WIN_WND_WIDTH            equ 4
@@ -125,10 +127,13 @@ WIN_WND_FLAGS            equ 9
 WIN_WND_COUNT            equ 10
 WIN_WND_FOCUS            equ 11
 WIN_WND_ITEMS            equ 12
-WIN_WND_LAST_FOCUS       equ 14
-WIN_WND_RESERVED         equ 15
+WIN_WND_TITLE            equ 14
+WIN_WND_TITLE_ATTR       equ 16
+WIN_WND_LAST_FOCUS       equ 17
+WIN_WND_RESERVED         equ 18
 WIN_WND_NOPANEL          equ #01
 WIN_WND_SUNKEN           equ #02
+WIN_WND_CLOSE            equ #04
 
 ; WinItem (8 bytes).
 WIN_ITEM_SIZE            equ 8
@@ -218,6 +223,11 @@ WIN_EV_LEAVE             equ 7
 WIN_EV_OUTSIDE           equ 8
 WIN_EV_FOCUS             equ 9
 WIN_EV_CHANGE            equ 10
+WIN_EV_CLOSE             equ 11
+
+; Window title bar geometry, shared by drawing and hit-testing.
+WIN_TITLE_H              equ 14
+WIN_TITLE_CLOSE_GLYPH    equ 'X'
 
 WIN_REPEAT_DELAY         equ 12
 WIN_REPEAT_RATE          equ 3

@@ -8,6 +8,14 @@ S4_SCAN_RIGHT          equ #56
 S4_SCAN_HOME           equ #57
 S4_CARET_TICKS         equ 14
 
+; A=index. HL = s4_data_ptr + A (zero-extended).
+s4_data_at_a:
+        ld e,a
+        ld d,0
+        ld hl,(s4_data_ptr)
+        add hl,de
+        ret
+
 ; ---- public edit entries -------------------------------------------------
 
 win_edit_draw:
@@ -81,21 +89,18 @@ s4_load_edit:
         and WIN_ED_FRAME
         jr z,.plain_size
         ld hl,(s4_edit_scratch+WIN_ED_WIDTH)
-        ld de,5
-        or a
-        sbc hl,de
+        ld a,5
+        call s1_hl_minus_a
         jp c,.bad
         ld hl,(s4_edit_scratch+WIN_ED_HEIGHT)
-        ld de,12
-        or a
-        sbc hl,de
+        ld a,12
+        call s1_hl_minus_a
         jp c,.bad
         jr .geometry
 .plain_size:
         ld hl,(s4_edit_scratch+WIN_ED_HEIGHT)
-        ld de,8
-        or a
-        sbc hl,de
+        ld a,8
+        call s1_hl_minus_a
         jp c,.bad
 .geometry:
         ld hl,s4_edit_scratch
@@ -117,9 +122,8 @@ s4_load_edit:
         inc hl
         ld (s4_content_x),hl
         ld hl,(s4_content_w)
-        ld de,4
-        or a
-        sbc hl,de
+        ld a,4
+        call s1_hl_minus_a
         ld (s4_content_w),hl
 .plain_content:
         ld de,8
@@ -251,18 +255,20 @@ s4_update_scroll:
         inc (hl)
         jr .again
 
-; A=character index, returns A=glyph width. The end cursor uses a space.
-s4_char_width_at:
+; A=index. Compares s4_len against A (Z if equal, C if s4_len < A).
+s4_cmp_len:
         ld b,a
         ld a,(s4_len)
         cp b
+        ret
+
+; A=character index, returns A=glyph width. The end cursor uses a space.
+s4_char_width_at:
+        call s4_cmp_len
         jr z,.space
         jr c,.space
         ld a,b
-        ld e,a
-        ld d,0
-        ld hl,(s4_data_ptr)
-        add hl,de
+        call s4_data_at_a
         ld a,(hl)
         ld c,a
         ld a,(s4_edit_scratch+WIN_ED_FLAGS)
@@ -364,10 +370,7 @@ s4_render_edit_content_mapped_fresh:
         jr c,.done
         jr z,.done
         ld a,b
-        ld e,a
-        ld d,0
-        ld hl,(s4_data_ptr)
-        add hl,de
+        call s4_data_at_a
         ld a,(hl)
         ld c,a
         ld a,(s4_edit_scratch+WIN_ED_FLAGS)
@@ -418,7 +421,7 @@ s4_render_edit_content_mapped_fresh:
         ld hl,s4_draw_index
         bit 7,(hl)
         ret nz
-        jp s4_caret_toggle_mapped
+        jr s4_caret_toggle_mapped
 
 ; Draw a solid foreground-colour caret and restore its saved background on
 ; the next toggle. A modal content redraw restores the complete old caret
@@ -870,7 +873,7 @@ s4_focus_click:
         ret
 .move:
         ld a,b
-        jp s4_apply_focus
+        jr s4_apply_focus
 
 ; A=new focus. Redraw old/new derived indicators, then publish both fields.
 s4_apply_focus:
@@ -910,9 +913,8 @@ s4_apply_focus_hidden:
         ld de,WIN_WND_FOCUS
         add hl,de
         ld (hl),a
-        inc hl
-        inc hl
-        inc hl
+        ld de,WIN_WND_LAST_FOCUS-WIN_WND_FOCUS
+        add hl,de
         ld (hl),a
         xor a
         ret
@@ -1028,9 +1030,7 @@ s4_item_focusable:
         and WIN_IT_HIDDEN|WIN_IT_DISABLED|WIN_IT_FOCUSABLE
         cp WIN_IT_FOCUSABLE
         ret nz
-        call s6_choice_enabled
-        or a
-        ret
+        jp s6_choice_enabled
 
 ; A=item index, B=pressed. Draw first, then publish the derived button flags.
 s4_draw_button_state:
@@ -1041,9 +1041,7 @@ s4_draw_button_state:
         call s2_load_item_index
         ld de,(item_scratch+WIN_ITEM_CONTROL)
         ld (s4_control_ptr),de
-        ld bc,WIN_BUTTON_SIZE
-        ld hl,button_scratch
-        call s1_copy_caller_block
+        call s1_copy_button_block
         ret nz
         ld a,(button_scratch+WIN_BTN_FLAGS)
         ld b,a
@@ -1177,9 +1175,7 @@ s4_edit_run:
         bit 5,a
         jr nz,.word_right
         ld a,(s4_edit_scratch+WIN_ED_CURSOR)
-        ld b,a
-        ld a,(s4_len)
-        cp b
+        call s4_cmp_len
         jp z,.loop
         ld hl,s4_edit_scratch+WIN_ED_CURSOR
         inc (hl)
@@ -1233,10 +1229,7 @@ s4_edit_run:
         jp z,.loop
         ld c,a
         ld b,a
-        ld e,a
-        ld d,0
-        ld hl,(s4_data_ptr)
-        add hl,de
+        call s4_data_at_a
 .word_left_spaces:
         dec hl
         ld a,(hl)
@@ -1273,9 +1266,7 @@ s4_edit_run:
         ld a,(s4_len)
         ld (s4_edit_scratch+WIN_ED_LEN),a
         ld a,(s4_original_cursor)
-        ld b,a
-        ld a,(s4_len)
-        cp b
+        call s4_cmp_len
         ld a,b
         jr nc,.esc_cursor
         ld a,(s4_len)
@@ -1348,9 +1339,7 @@ s4_validate_edit_track:
         or l
         ret z
         ex de,hl
-        ld bc,WIN_TRACK_SIZE
-        ld hl,s3_track_scratch
-        call s1_copy_caller_block
+        call s1_copy_track_block
         ret nz
         jp s3_preflight
 
@@ -1366,9 +1355,7 @@ s4_cursor_from_mouse_x:
         ret c
 .next:
         ld a,(s4_edit_scratch+WIN_ED_CURSOR)
-        ld b,a
-        ld a,(s4_len)
-        cp b
+        call s4_cmp_len
         ret z
         ld a,b
         push hl
@@ -1540,10 +1527,7 @@ s4_insert_char:
         ret z
         ld a,(s4_edit_scratch+WIN_ED_CURSOR)
         ld (s4_work_cursor),a
-        ld e,a
-        ld d,0
-        ld hl,(s4_data_ptr)
-        add hl,de
+        call s4_data_at_a
         ld (s4_insert_ptr),hl
         ld a,(s4_len)
         ld b,a
@@ -1583,16 +1567,11 @@ s4_insert_char:
 ; Delete at cursor. C=set if the buffer changed.
 s4_delete_at_cursor:
         ld a,(s4_edit_scratch+WIN_ED_CURSOR)
-        ld b,a
-        ld a,(s4_len)
-        cp b
+        call s4_cmp_len
         ret z
         jr c,.none
         ld a,b
-        ld e,a
-        ld d,0
-        ld hl,(s4_data_ptr)
-        add hl,de
+        call s4_data_at_a
         push hl
         pop de
         inc hl
@@ -1627,10 +1606,7 @@ s4_store_public_length:
         ret
 .asciiz:
         ld a,(s4_len)
-        ld e,a
-        ld d,0
-        ld hl,(s4_data_ptr)
-        add hl,de
+        call s4_data_at_a
         xor a
         ld (hl),a
         ret

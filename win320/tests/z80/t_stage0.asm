@@ -239,11 +239,11 @@ start:
         ld a,15
         call t_expect_nc
         ld a,d
-        cp 1
+        cp 2
         ld a,16
         call t_expect_z
         ld a,e
-        cp 1
+        cp 0
         ld a,17
         call t_expect_z
 
@@ -442,8 +442,13 @@ test_auto_window_pairs:
         jr nz,.code
         ret
 
+; Each value only needs to land inside its window's #C0-masked page; the
+; WIN3 entry is kept near the top of the address space so the transient
+; substitute stack used below never collides with the DLL's own code,
+; which occupies the low end of WIN3 in this flat test layout and shifts
+; as the library is edited.
 auto_stack_values:
-        dw #2ff0,#6ff0,#aff0,#eff0
+        dw #2ff0,#6ff0,#aff0,#fff0
 
         ds #2000-$,0
         assert $ == #2000

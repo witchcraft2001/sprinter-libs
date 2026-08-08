@@ -64,10 +64,10 @@ start:
         or a
         jp nz,api_failed
         ld a,d
-        cp 1
+        cp 2
         jp nz,self_failed
         ld a,e
-        cp 1
+        cp 0
         jp nz,self_failed
         push ix
         pop hl
@@ -187,6 +187,11 @@ start:
         jp nz,api_failed
         ld a,1
         call run_stage6_showcase
+        jp nz,api_failed
+
+        ld a,9
+        ld (test_stage),a
+        call run_stage7_showcase
         jp nz,api_failed
 
 success:
@@ -1030,6 +1035,127 @@ stage6_write_status:
 
 stage6_screen:          db 0
 
+; A window title/close button are properties of WinWindow, not items: no
+; extra declarative entries are needed beyond the ones the dialog itself
+; wants. The companion window has no title at all, drawn for contrast.
+run_stage7_showcase:
+        xor a
+        call select_target_screen
+        ret nz
+        ld e,WIN_TXT_ASCIIZ
+        ld b,WIN_SET_TEXT_FORMAT
+        call call_api
+        ret nz
+        ld de,0
+        ld b,WIN_SET_THEME
+        call call_api
+        ret nz
+        ld d,#ff
+        ld e,WIN_STYLE_CLEAR
+        ld b,WIN_STYLE
+        call call_api
+        ret nz
+
+        ld de,stage7_plain_window
+        ld b,WIN_DRAW
+        call call_api
+        ret nz
+
+        xor a
+        ld (stage7_theme_toggle),a
+        call stage7_write_status
+        ld de,stage7_window
+        ld b,WIN_OPEN
+        call call_api
+        ret nz
+        xor a
+        call show_screen
+
+        ld hl,stage7_track+WIN_TRK_STATE
+        ld b,WIN_TRACK_SIZE-WIN_TRK_STATE
+        xor a
+.clear_state:
+        ld (hl),a
+        inc hl
+        djnz .clear_state
+        ld c,0                       ; application-side Mouse INIT
+        rst #30
+        ld e,0
+        ld b,WIN_SET_CURSOR
+        call call_api
+        ret nz
+        ld hl,160
+        ld de,128
+        ld c,4
+        rst #30
+        ld c,1
+        rst #30
+        ld b,WIN_WAIT_RELEASE
+        call call_api
+        ret nz
+        ld c,2                       ; win_track owns SHOW/HIDE
+        rst #30
+.track:
+        ld de,stage7_track
+        ld b,WIN_TRACK
+        call call_api
+        jr nz,.close
+        ld a,(stage7_track+WIN_TRK_EVENT)
+        cp WIN_EV_CLOSE
+        jr z,.close
+        cp WIN_EV_LCLICK
+        jr nz,.key
+        ld a,(stage7_track+WIN_TRK_ID)
+        cp 91                         ; Exit button
+        jr z,.close
+        cp 90                         ; Theme button
+        jr nz,.track
+        ld hl,stage7_theme_toggle
+        ld a,(hl)
+        xor 1
+        ld (hl),a
+        call stage7_apply_theme
+        jr nz,.close
+        jr .track
+.key:
+        ld a,(stage7_track+WIN_TRK_EVENT)
+        cp WIN_EV_KEY
+        jr nz,.track
+        ld a,(stage7_track+WIN_TRK_KEY_ASCII)
+        cp #1b
+        jr nz,.track
+.close:
+        ld b,WIN_CLOSE
+        call call_api
+        ret nz
+        call wait_step
+        xor a
+        ret
+
+; Toggling the title's theme requires a full WIN_DRAW: the title bar is
+; painted by the same declarative-window pass as the item list, not by
+; WIN_UPDATE's dirty-item-only path.
+stage7_apply_theme:
+        ld a,(stage7_theme_toggle)
+        or a
+        ld de,0
+        jr z,.set
+        ld de,stage7_theme_alt
+.set:
+        ld b,WIN_SET_THEME
+        call call_api
+        ret nz
+        call stage7_write_status
+        ld de,stage7_window
+        ld b,WIN_DRAW
+        jp call_api
+
+stage7_write_status:
+        ld a,(stage7_theme_toggle)
+        add a,'0'
+        ld (str_stage7_status+13),a
+        ret
+
         ifdef WIN320_BENCH
 ; Hardware timing harness. CTC channels 2/3 form an exact 500-Hz source from
 ; the fixed 7-MHz clock. Results are batches measured through the public ABI;
@@ -1290,7 +1416,9 @@ win_benchmark_window:
         dw 0,160,320,64
         db #ff,WIN_WND_NOPANEL,0,#ff
         dw 0
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 
 win_benchmark_counter:          dw 0
 win_benchmark_started:          dw 0
@@ -1748,7 +1876,9 @@ demo_window:
         dw 20,24,280,204
         db #ff,0,5,#ff
         dw demo_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 demo_items:
         db WIN_T_LABEL,WIN_IT_DIRTY,#ff,0
         dw demo_label,0
@@ -1787,7 +1917,9 @@ modal_a_window:
         dw 54,62,212,116
         db #ff,0,2,#ff
         dw modal_a_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 modal_a_items:
         db WIN_T_LABEL,WIN_IT_DIRTY,#ff,0
         dw modal_a_label,0
@@ -1806,7 +1938,9 @@ modal_b_window:
         dw 80,88,160,80
         db #ff,WIN_WND_SUNKEN,1,#ff
         dw modal_b_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 modal_b_items:
         db WIN_T_LABEL,WIN_IT_DIRTY,#ff,0
         dw modal_b_label,0
@@ -1821,7 +1955,9 @@ stage4_window_a:
         dw 24,36,272,160
         db #ff,0,3,0
         dw stage4_items_a
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 stage4_items_a:
         db WIN_T_EDIT,WIN_IT_HIT|WIN_IT_FOCUSABLE,20,0
         dw stage4_edit_a,stage4_buffer_a
@@ -1853,7 +1989,9 @@ stage4_window_p:
         dw 24,36,272,160
         db #ff,0,3,0
         dw stage4_items_p
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 stage4_items_p:
         db WIN_T_EDIT,WIN_IT_HIT|WIN_IT_FOCUSABLE,30,0
         dw stage4_edit_p,stage4_buffer_p
@@ -1887,7 +2025,9 @@ stage5_window:
         dw 16,16,288,224
         db #ff,0,12,1
         dw stage5_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 stage5_items:
         db WIN_T_LABEL,0,#ff,0
         dw stage5_label,0
@@ -1978,7 +2118,9 @@ stage6_window:
         dw 30,20,260,216
         db #ff,0,9,0
         dw stage6_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 stage6_items:
         db WIN_T_LABEL,0,#ff,0
         dw stage6_title,0
@@ -2039,9 +2181,68 @@ stage6_track:
         db 0,WIN_TRK_ANY_KEY|WIN_TRK_OUTSIDE|WIN_TRK_HALT|WIN_TRK_SHOW_CUR|WIN_TRK_TAB_FOCUS
         ds WIN_TRACK_SIZE-6,0
 
+; ---- Stage-7 window title bar and close button showcase -----------------
+
+stage7_hint:
+        dw 10,20,190,10
+        db #ff,WIN_LABEL_CLIP
+        dw str_stage7_hint
+stage7_status:
+        dw 10,34,190,10
+        db #ff,WIN_LABEL_CLIP
+        dw str_stage7_status
+stage7_theme_button:
+        dw 10,54,85,24
+        db #ff,0
+        dw str_stage7_theme_btn
+stage7_exit_button:
+        dw 110,54,85,24
+        db #ff,0
+        dw str_stage7_exit_btn
+stage7_items:
+        db WIN_T_LABEL,0,#ff,0
+        dw stage7_hint,0
+        db WIN_T_LABEL,0,#ff,0
+        dw stage7_status,0
+        db WIN_T_BUTTON,WIN_IT_HIT|WIN_IT_FOCUSABLE|WIN_IT_PRESS,90,0
+        dw stage7_theme_button,0
+        db WIN_T_BUTTON,WIN_IT_HIT|WIN_IT_FOCUSABLE|WIN_IT_PRESS,91,0
+        dw stage7_exit_button,0
+stage7_window:
+        dw 16,30,210,100
+        db #ff,WIN_WND_CLOSE,4,2
+        dw stage7_items
+        dw str_stage7_title
+        db #ff,#ff
+        dw 0
+stage7_track:
+        dw stage7_window,0
+        db 0,WIN_TRK_ANY_KEY|WIN_TRK_HALT|WIN_TRK_SHOW_CUR|WIN_TRK_TAB_FOCUS
+        ds WIN_TRACK_SIZE-6,0
+stage7_theme_toggle:    db 0
+
+stage7_plain_label:
+        dw 0,24,64,10
+        db #ff,WIN_LABEL_CENTER
+        dw str_stage7_plain
+stage7_plain_items:
+        db WIN_T_LABEL,0,#ff,0
+        dw stage7_plain_label,0
+stage7_plain_window:
+        dw 240,30,64,60
+        db #ff,0,1,#ff
+        dw stage7_plain_items
+        dw 0
+        db #ff,#ff
+        dw 0
+
+stage7_theme_alt:
+        db 15,7,8,1,0,7,15,0
+        db 1,15,7,1,7,1,#0f,9,15,0
+
 blue_theme:
         db 15,1,9,3,15,8,0,15
-        db 3,15,1,11,1,9,#55,0
+        db 3,15,1,11,1,9,#55,1,15,0
 
 str_title:       db "WIN320 Stage 4 / screen 0 / ASCIIZ",0
 str_long:        db "Clipped proportional label with a deliberately long tail",0
@@ -2090,6 +2291,13 @@ str_stage6_view_b: db "View 2: Icons",0
 str_stage6_status: db "Check=0  Audio=A  View=1",0
 str_stage6_exit: db "Exit",0
 
+str_stage7_title: db "Stage 7: window title bar and close button (click X or Theme)",0
+str_stage7_hint: db "Theme recolors the title live; X or Exit closes",0
+str_stage7_status: db "Title theme: 0",0
+str_stage7_theme_btn: db "Theme",0
+str_stage7_exit_btn: db "Exit",0
+str_stage7_plain: db "No title",0
+
 pstr_title:      db 39,"WIN320 Stage 4 / screen 1 / Pascal text"
 pstr_long:       db 55,"Alternate theme, centered and clipped Pascal label tail"
 pstr_hint:       db 17,"Escape: exit test"
@@ -2111,7 +2319,7 @@ icon_pack_expected:
         dw 12
         db 8,2,16,2
 dll_name:        db "WIN320.DLL",0
-msg_banner:      db "WIN320 ABI 1.1 visual test",13,10,0
+msg_banner:      db "WIN320 ABI 2.0 visual test",13,10,0
 msg_ok:          db "PASS: Stage 6 choice sequence.",13,10,0
 msg_failed:      db "FAIL: stage=$",0
 msg_status:      db " status=$",0

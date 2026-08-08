@@ -67,7 +67,9 @@ draw_window:
         dw 10,20,150,80
         db #ff,WIN_WND_NOPANEL,DRAW_ITEM_COUNT,#ff
         dw draw_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 
 mid_items:
         db WIN_T_FILL,WIN_IT_DIRTY,#ff,0
@@ -80,13 +82,17 @@ mid_window:
         dw 20,30,100,60
         db #ff,WIN_WND_NOPANEL,3,#ff
         dw mid_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 
 back_window:
         dw 0,120,1,1
         db #ff,WIN_WND_NOPANEL,0,#ff
         dw 0
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 
 rollback_good:
         dw 0,0,5,5
@@ -103,7 +109,9 @@ rollback_window:
         dw 40,150,20,10
         db #ff,WIN_WND_NOPANEL,2,#ff
         dw rollback_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 
 overflow_label:
         dw 0,0,1,8
@@ -116,7 +124,9 @@ overflow_window:
         dw 40,140,8,8
         db #ff,WIN_WND_NOPANEL,1,#ff
         dw overflow_items
-        db #ff,0
+        dw 0
+        db #ff,#ff
+        dw 0
 
 text_button:            db "Disabled",0
 text_label:             db "Declarative Stage 2",0
@@ -328,11 +338,11 @@ start:
         call t_expect_z
         call win_get_version
         ld a,d
-        cp 1
+        cp 2
         ld a,3
         call t_expect_z
         ld a,e
-        cp 1
+        cp 0
         ld a,4
         call t_expect_z
         push ix

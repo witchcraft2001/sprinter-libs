@@ -36,7 +36,7 @@ window's item list works unchanged in a direct call.
 | `tools/winiconpack.py` | icon packer, PNG/BMP → `WIP1` |
 | `WIN320.EXE` | visual test of the library; applications do **not** need it |
 
-## 2. Functionality (ABI 1.1)
+## 2. Functionality (ABI 2.0)
 
 - **Primitives** — fill, raised/sunken 3D frame, panel, separator, XOR
   invert, dashed focus indicator.
@@ -51,14 +51,19 @@ window's item list works unchanged in a direct call.
 - **Windows** — a declarative object list, redraw of changed objects only
   (`WIN_IT_DIRTY` + `win_update`), a LIFO stack of modal windows with
   background save/restore (backstore in application-owned EMM pages).
+  An optional title bar and close button are properties of the window
+  itself (`WinWindow.title`, `WIN_WND_CLOSE`), not declarative items;
+  `win_draw`/`win_open` paint the strip, and the tracker reports
+  `WIN_EV_CLOSE` on a full press/release inside the close glyph.
 - **Events** — non-blocking `win_poll` and blocking `win_track`: clicks,
   auto-repeat, hover/leave, hotkeys, raw codes of any key, scrollbar
-  sub-areas and listbox rows.
+  sub-areas, listbox rows, and the window close button.
 - **Keyboard focus** — Tab/Shift+Tab traversal, Enter activates the
   focused button, Space toggles checkbox/radio, arrows move inside a
   radio group; the focus indicator is drawn by the library.
-- **Theme** — 16 colour roles set by one `win_set_theme` call; `#FF` in
-  any descriptor colour field means "take it from the theme".
+- **Theme** — 18 colour roles set by one `win_set_theme` call, including
+  the title bar's background and text; `#FF` in any descriptor colour
+  field means "take it from the theme".
 - **Strings** — a global format: ASCIIZ (C/asm) or length-prefixed
   (Turbo Pascal `string`).
 - **Screens** — drawing to screen 0 or 1 (`win_set_screen`); switching
@@ -153,7 +158,7 @@ Numbers are the `WIN_*` constants in [win320.inc](win320.inc).
 | 1 | `win_free` | `l_free` only | — |
 | 2 | `win_set_work_windows` | `D`=data window, `E`=VRAM window; `0..3` or `WIN_WORK_AUTO=#FF` | |
 | 3 | `win_set_screen` | `E`=0/1 | |
-| 4 | `win_get_version` | — | `D`=major(1), `E`=minor(1), `IX`=capabilities |
+| 4 | `win_get_version` | — | `D`=major(2), `E`=minor(0), `IX`=capabilities |
 | 5 | `win_get_config` | `DE`=&WinConfig | filled structure |
 | 6 | `win_load_font` | `DE`=ASCIIZ path to a `WF32` file | |
 | 7 | `win_set_theme` | `DE`=&WinTheme or 0 (default theme) | |
@@ -220,7 +225,7 @@ colours and is recoloured by a single `win_set_theme`. Indices map to the
 top 16 palette entries (`#F0|color`); the lower 240 belong to the
 application.
 
-`WinTheme` — 16 one-byte roles:
+`WinTheme` — 18 one-byte roles:
 
 | Role | Default | Purpose |
 |---|---:|---|
@@ -233,6 +238,7 @@ application.
 | `WIN_TH_PROGRESS` / `WIN_TH_PROGRESS_FILL` | 7 / 1 | progress bar |
 | `WIN_TH_SCROLL_TRACK` / `WIN_TH_SCROLL_THUMB` | 7 / 8 | scrollbar |
 | `WIN_TH_FOCUS_MASK` | `#0F` | XOR mask of the focus dashes |
+| `WIN_TH_TITLE_BG` / `WIN_TH_TITLE_FG` | 1 / 15 | window title bar |
 
 `win_style` is a screen-setup service: load the standard EGA palette into
 `#F0..#FF` (`WIN_STYLE_PALETTE`), clear the screen (`WIN_STYLE_CLEAR`),
@@ -240,9 +246,25 @@ apply to both screens (`WIN_STYLE_BOTH`).
 
 ## 8. Declarative windows
 
-`WinWindow` (16 bytes): geometry, `color`, flags (`WIN_WND_NOPANEL` —
-skip the body panel, `WIN_WND_SUNKEN`), `count`, `focus` (index of the
-focused item, `#FF` — none), the `items` pointer, internal `last_focus`.
+`WinWindow` (20 bytes): geometry, `color`, flags (`WIN_WND_NOPANEL` —
+skip the body panel, `WIN_WND_SUNKEN`, `WIN_WND_CLOSE` — draw a close
+button in the title bar), `count`, `focus` (index of the focused item,
+`#FF` — none), the `items` pointer, `title` (a string pointer, 0 — no
+title bar), `title_attr`, internal `last_focus`.
+
+### Title bar and close button (ABI 2.0)
+
+Setting `title` paints a themeable strip along the top of the window and
+a clipped, `".."`-truncated label inside it; `WIN_WND_CLOSE` additionally
+draws a close glyph and makes it clickable. Both are properties of the
+window, not declarative items — no extra `WinItem` entries are needed.
+`title=0` requires `WIN_WND_CLOSE` to be clear; a non-zero `title`
+requires `WIN_WND_NOPANEL` to be clear and `width>=20`, `height>=18`.
+Any violation returns `WIN_ERR_ARGUMENT` from `win_draw`/`win_open`
+**before** anything is written to the screen. A full press-then-release
+inside the close button reports `WIN_EV_CLOSE` (`id`/`index` `#FF`);
+releasing outside cancels it, and clicking elsewhere on the strip is
+absorbed without producing any event.
 
 `WinItem` (8 bytes per record, no terminator — `count` gives the length):
 
@@ -327,6 +349,7 @@ Events:
 | 8 | `WIN_EV_OUTSIDE` | click outside all hit-objects (`id=#FF`) |
 | 9 | `WIN_EV_FOCUS` | focus moved by Tab/Shift+Tab |
 | 10 | `WIN_EV_CHANGE` | the library changed a checkbox/radio (already repainted) |
+| 11 | `WIN_EV_CLOSE` | window close button pressed and released (`id=#FF`) |
 
 Additional event context is in `WinTrack` fields: the record `index`,
 `part` (sub-area: scrollbar arrows/pages/thumb, listbox row), `item`

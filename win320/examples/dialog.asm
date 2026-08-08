@@ -1,6 +1,6 @@
         org #8100-512
 
-; ABI 1.1 assembly example. WIN320.DLL must be beside this EXE.
+; ABI 2.0 assembly example. WIN320.DLL must be beside this EXE.
         dw #5845
         db #45,#00
         dw #0200,#0000,#0000,#0000,#0000,#0000
@@ -54,6 +54,8 @@ start:
         ld a,(track+WIN_TRK_EVENT)
         or a
         jr z,.poll
+        cp WIN_EV_CLOSE
+        jr z,.free
         ld a,(track+WIN_TRK_ID)
         cp 2
         jr z,.free
@@ -83,12 +85,12 @@ api:
 
 window:
         dw 32,20,256,216
-        db #ff,0,7,2
+        db #ff,WIN_WND_CLOSE,6,2
         dw items
-        db #ff,0
+        dw dialog_title
+        db #ff,#ff
+        dw 0
 items:
-        db WIN_T_LABEL,0,#ff,0
-        dw title_label,0
         db WIN_T_EDIT,WIN_IT_HIT|WIN_IT_FOCUSABLE,10,0
         dw edit,0
         db WIN_T_LISTBOX,WIN_IT_HIT|WIN_IT_FOCUSABLE,11,0
@@ -102,10 +104,6 @@ items:
         db WIN_T_LABEL,0,#ff,0
         dw status_label,0
 
-title_label:
-        dw 12,10,232,8
-        db #ff,WIN_LABEL_CENTER
-        dw title_text
 status_label:
         dw 12,184,232,8
         db #ff,WIN_LABEL_CENTER
@@ -142,7 +140,7 @@ track:
         ds WIN_TRACK_SIZE-6,0
 
 list_rows:      dw row0,row1,row2
-title_text:     db "WIN320 assembly dialog",0
+dialog_title:   db "WIN320 assembly dialog",0
 status_ready:   db "Ready",0
 status_changed: db "Selection changed",0
 edit_buffer:    db "edit me",0

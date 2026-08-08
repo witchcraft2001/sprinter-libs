@@ -33,9 +33,10 @@ s2_win_draw:
         ret nz
 s2_draw_loaded_window:
         call s2_draw_window_body
-        or a
         ret nz
         call s2_set_window_origin
+        call s7_draw_title
+        jr nz,.failed
         call s2_begin_item_walk
 .loop:
         ld a,(s2_items_left)
@@ -43,7 +44,6 @@ s2_draw_loaded_window:
         jr z,.done
         call s2_load_current_item
         call s2_process_item
-        or a
         jr nz,.failed
         call s2_clear_item_dirty
         call s2_advance_item
@@ -54,11 +54,7 @@ s2_draw_loaded_window:
         xor a
         ret
 .failed:
-        ld (s2_error),a
-        call s2_restore_origin
-        ld a,(s2_error)
-        or a
-        ret
+        jp s2_restore_origin_keep_a
 
 win_draw_item:
         push bc
@@ -91,18 +87,13 @@ s2_win_draw_item:
         or a
         jr nz,.failed
         call s2_process_item
-        or a
         jr nz,.failed
         call s2_clear_item_dirty
         call s2_restore_origin
         xor a
         ret
 .failed:
-        ld (s2_error),a
-        call s2_restore_origin
-        ld a,(s2_error)
-        or a
-        ret
+        jp s2_restore_origin_keep_a
 .bad:
         jp win_error_argument
 
@@ -147,7 +138,6 @@ s2_win_update:
 .redraw:
         call s2_load_current_item
         call s2_process_item_marked
-        or a
         jr nz,.failed
         call s2_clear_item_dirty
         ld a,(s2_item_rendered)
@@ -166,12 +156,9 @@ s2_win_update:
         xor a
         ret
 .failed:
-        ld (s2_error),a
-        call s2_restore_origin
-        ld a,(s2_update_count)
-        ld e,a
-        ld a,(s2_error)
-        or a
+        call s2_restore_origin_keep_a
+        ld hl,s2_update_count
+        ld e,(hl)
         ret
 
 ; Copy and validate WinWindow, including its complete WinItem array range.
@@ -182,11 +169,14 @@ s2_load_window:
         call s1_copy_caller_block
         ret nz
         ld a,(window_scratch+WIN_WND_FLAGS)
-        and #fc
-        jp nz,.unsupported
-        ld a,(window_scratch+WIN_WND_RESERVED)
-        or a
-        jp nz,.bad
+        and #f8
+        jr nz,.unsupported
+        ld hl,(window_scratch+WIN_WND_RESERVED)
+        ld a,h
+        or l
+        jr nz,.bad
+        call s7_validate_title
+        jr nz,.bad
         ; WinWindow and WinRect share the first eight bytes. Reuse the exact
         ; non-wrapping screen validator with a temporary zero origin.
         ld hl,(origin_x)
@@ -199,10 +189,7 @@ s2_load_window:
         ld (origin_y),a
         ld hl,window_scratch
         call s1_load_control_rect
-        ld (s2_error),a
-        call s2_restore_origin
-        ld a,(s2_error)
-        or a
+        call s2_restore_origin_keep_a
         jr nz,.bad
         ld a,(rect_empty)
         or a
@@ -227,9 +214,7 @@ s2_load_window:
         call s1_validate_caller_range
         jr c,.bad
 .no_items:
-        call s4_validate_window_focus
-        or a
-        ret
+        jp s4_validate_window_focus
 .unsupported:
         jp win_reserved
 .bad:
@@ -246,7 +231,7 @@ s2_load_item_index:
         ld de,(window_scratch+WIN_WND_ITEMS)
         add hl,de
         ld (s2_item_ptr),hl
-        jp s2_load_current_item
+        jr s2_load_current_item
 
 ; Sequential aggregate paths walk the already validated array directly.
 s2_begin_item_walk:
@@ -342,7 +327,7 @@ s2_process_item_marked:
         or a
         ret z
         cp WIN_T_ZONE
-        jp z,s2_process_zone
+        jr z,s2_process_zone
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_HIT
         jr z,.dispatch
@@ -358,36 +343,24 @@ s2_process_item_marked:
 .dispatch:
         ld hl,s2_item_rendered
         set 0,(hl)
-        ld de,(item_scratch+WIN_ITEM_CONTROL)
         ld a,(item_scratch+WIN_ITEM_TYPE)
-        cp WIN_T_LABEL
-        jr z,s2_process_label
-        cp WIN_T_FILL
-        jp z,win_fill_rect
-        cp WIN_T_FRAME
-        jp z,win_frame
-        cp WIN_T_PANEL
-        jp z,win_panel
-        cp WIN_T_SEPARATOR
-        jp z,win_separator
-        cp WIN_T_ICON
-        jp z,win_icon
-        cp WIN_T_PROGRESS
-        jp z,win_progress_draw
-        cp WIN_T_SCROLLBAR
-        jp z,win_scrollbar_draw
-        cp WIN_T_LISTBOX
-        jp z,win_listbox_draw
-        cp WIN_T_EDIT
-        jp z,s4_edit_draw_item
-        cp WIN_T_CHECKBOX
-        jp z,s6_choice_item
-        cp WIN_T_RADIOBUTTON
-        jp z,s6_choice_item
-        ; The only remaining Stage-2 visual type is WIN_T_BUTTON.
-        ld bc,WIN_BUTTON_SIZE
-        ld hl,button_scratch
-        call s1_copy_caller_block
+        dec a
+        add a,a
+        ld l,a
+        ld h,0
+        ld de,s2_type_dispatch
+        add hl,de
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld hl,(item_scratch+WIN_ITEM_CONTROL)
+        ex de,hl
+        jp (hl)
+
+; The only remaining Stage-2 visual type is WIN_T_BUTTON.
+s2_dispatch_button:
+        ld de,(item_scratch+WIN_ITEM_CONTROL)
+        call s1_copy_button_block
         ret nz
         call s4_apply_button_focus_scratch
         ld a,(item_scratch+WIN_ITEM_FLAGS)
@@ -403,22 +376,33 @@ s2_process_item_marked:
         xor a
         ret
 
+; Indexed by WIN_T_* - 1 (WIN_T_ZONE is intercepted earlier and never
+; reaches this table).
+s2_type_dispatch:
+        dw s2_process_label      ; WIN_T_LABEL
+        dw win_fill_rect         ; WIN_T_FILL
+        dw win_frame             ; WIN_T_FRAME
+        dw win_panel             ; WIN_T_PANEL
+        dw win_separator         ; WIN_T_SEPARATOR
+        dw s2_dispatch_button    ; WIN_T_BUTTON
+        dw win_icon              ; WIN_T_ICON
+        dw win_progress_draw     ; WIN_T_PROGRESS
+        dw win_scrollbar_draw    ; WIN_T_SCROLLBAR
+        dw win_listbox_draw      ; WIN_T_LISTBOX
+        dw s4_edit_draw_item     ; WIN_T_EDIT
+        dw win_reserved          ; WIN_T_ZONE (unreachable placeholder)
+        dw s6_choice_item        ; WIN_T_CHECKBOX
+        dw s6_choice_item        ; WIN_T_RADIOBUTTON
+
 s2_process_label:
-        ld bc,WIN_LABEL_SIZE
-        ld hl,label_scratch
-        call s1_copy_caller_block
+        call s1_copy_label_block
         ret nz
         call s2_require_label_geometry
-        or a
         ret nz
         jp s1_label_loaded
 
 s2_process_zone:
-        call s2_load_control_geometry
-        or a
-        ret nz
-        call s2_validate_geometry_screen
-        or a
+        call s2_check_control_geometry
         ret nz
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_HIT
@@ -427,11 +411,7 @@ s2_process_zone:
         ret
 
 s2_validate_hit_geometry:
-        call s2_load_control_geometry
-        or a
-        ret nz
-        call s2_validate_geometry_screen
-        or a
+        call s2_check_control_geometry
         ret nz
 s2_require_nonempty_geometry:
         ld hl,(control_geometry+4)
@@ -471,6 +451,14 @@ s2_restore_origin:
         ld (origin_y),a
         ret
 
+; A=status to preserve across s2_restore_origin. Returns A/flags unchanged.
+s2_restore_origin_keep_a:
+        ld (s2_error),a
+        call s2_restore_origin
+        ld a,(s2_error)
+        or a
+        ret
+
 s2_draw_window_body:
         ld a,(window_scratch+WIN_WND_FLAGS)
         and WIN_WND_NOPANEL
@@ -483,24 +471,15 @@ s2_draw_window_body:
         ld bc,8
         ldir
         call s1_require_frame_size
-        or a
         ret nz
         ld a,(window_scratch+WIN_WND_COLOR)
-        ld b,WIN_TH_FACE
-        call s1_resolve_palette_color
+        call s1_resolve_fill_color
         jr c,.bad
-        ld (fill_color),a
         ld a,(window_scratch+WIN_WND_FLAGS)
         and WIN_WND_SUNKEN
         ld (panel_sunken),a
-        call s1_resolve_vram
-        or a
-        ret nz
-        call s1_map_vram
-        call s1_panel_mapped
-        call s1_unmap_vram
-        xor a
-        ret
+        ld hl,s1_panel_mapped
+        jp s1_draw_mapped_hl
 .bad:
         or a
         ret
@@ -614,14 +593,13 @@ s2_win_open:
         call s2_load_window
         ret nz
         call s2_preflight_window_body
-        or a
         ret nz
         call s2_set_window_origin
         call s2_preflight_items
-        ld (s2_error),a
-        call s2_restore_origin
-        ld a,(s2_error)
-        or a
+        jr nz,.preflight_done
+        call s7_preflight_title
+.preflight_done:
+        call s2_restore_origin_keep_a
         ret nz
         ld a,(backstore_pages)
         or a
@@ -630,11 +608,9 @@ s2_win_open:
         cp WIN_BACKSTORE_MAX_DEPTH
         jr nc,.depth
         call s2_allocator_preflight
-        or a
         ret nz
         ; Window choice is also preflight: no screen or stack state changed.
         call s1_resolve_pair
-        or a
         ret nz
         call s2_push_stack_record
         xor a
@@ -651,7 +627,6 @@ s2_win_open:
         ld a,(window_scratch+WIN_WND_Y)
         ld (origin_y),a
         call s2_draw_loaded_window
-        or a
         ret z
         ld (s2_open_error),a
         call s2_close_top
@@ -685,7 +660,7 @@ s2_win_close:
         ld a,(backstore_depth)
         or a
         jr z,.depth
-        jp s2_close_top
+        jr s2_close_top
 .depth:
         ld a,WIN_ERR_DEPTH
         or a
@@ -693,7 +668,6 @@ s2_win_close:
 
 s2_close_top:
         call s1_resolve_pair
-        or a
         ret nz
         ld a,(backstore_depth)
         dec a
@@ -702,30 +676,25 @@ s2_close_top:
         ld a,1
         ld (s2_copy_restore),a
         call s2_copy_stack_rect
-        ld hl,(s2_stack_ptr)
-        ld de,S2_STACK_ALLOC_OFFSET
-        add hl,de
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        ex de,hl
-        ld (backstore_alloc_offset),hl
+        ; ALLOC_PAGE..PREV_Y are contiguous (9..14): walk them in one pass.
         ld hl,(s2_stack_ptr)
         ld de,S2_STACK_ALLOC_PAGE
         add hl,de
         ld a,(hl)
         ld (backstore_alloc_page),a
-        ld hl,(s2_stack_ptr)
-        ld de,S2_STACK_PREV_X
-        add hl,de
-        ld e,(hl)
         inc hl
-        ld d,(hl)
-        ex de,hl
-        ld (origin_x),hl
-        ld hl,(s2_stack_ptr)
-        ld de,S2_STACK_PREV_Y
-        add hl,de
+        ld a,(hl)
+        ld (backstore_alloc_offset),a
+        inc hl
+        ld a,(hl)
+        ld (backstore_alloc_offset+1),a
+        inc hl
+        ld a,(hl)
+        ld (origin_x),a
+        inc hl
+        ld a,(hl)
+        ld (origin_x+1),a
+        inc hl
         ld a,(hl)
         ld (origin_y),a
         ld hl,backstore_depth
@@ -748,7 +717,6 @@ s2_close_all:
         or a
         jr z,.restore
         call s2_close_top
-        or a
         jr z,.loop
         ; AUTO always has two candidates on a four-window machine, but keep
         ; fini bounded if corrupted state makes close fail.
@@ -766,14 +734,10 @@ s2_preflight_window_body:
         and WIN_WND_NOPANEL
         jr nz,.ok
         ld hl,(window_scratch+WIN_WND_WIDTH)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jr c,.bad
         ld hl,(window_scratch+WIN_WND_HEIGHT)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jr c,.bad
 .ok:
         xor a
@@ -789,7 +753,6 @@ s2_preflight_items:
         jr z,.ok
         call s2_load_current_item
         call s2_validate_item
-        or a
         ret nz
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_HIDDEN
@@ -797,11 +760,7 @@ s2_preflight_items:
         ld a,(item_scratch+WIN_ITEM_TYPE)
         or a
         jr z,.next
-        call s2_load_control_geometry
-        or a
-        ret nz
-        call s2_validate_geometry_screen
-        or a
+        call s2_check_control_geometry
         ret nz
         ld a,(item_scratch+WIN_ITEM_FLAGS)
         and WIN_IT_HIT
@@ -819,10 +778,8 @@ s2_preflight_items:
         cp WIN_T_ZONE
         jr z,.next
         call s2_validate_geometry_window
-        or a
         ret nz
         call s2_preflight_type_geometry
-        or a
         ret nz
 .next:
         call s2_advance_item
@@ -856,9 +813,7 @@ s2_preflight_type_geometry:
         xor a
         ret
 .label:
-        call s2_preflight_label
-        or a
-        ret
+        jp s2_preflight_label
 .frame:
         ld hl,(control_geometry+4)
         ld a,h
@@ -869,14 +824,10 @@ s2_preflight_type_geometry:
         or l
         jr z,.ok
         ld hl,(control_geometry+4)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jr c,.bad
         ld hl,(control_geometry+6)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jr c,.bad
         jr .ok
 .separator:
@@ -892,36 +843,28 @@ s2_preflight_type_geometry:
         and WIN_RC_VERTICAL
         jr nz,.separator_vertical
         ld hl,(control_geometry+6)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jr nz,.bad
         jr .ok
 .separator_vertical:
         ld hl,(control_geometry+4)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jr nz,.bad
         jr .ok
 .button:
         ld hl,(control_geometry+4)
-        ld de,2
-        or a
-        sbc hl,de
+        call s1_hl_minus_2
         jr c,.bad
         ld hl,(control_geometry+6)
-        ld de,10
-        or a
-        sbc hl,de
+        ld a,10
+        call s1_hl_minus_a
         jr c,.bad
         ld a,(control_geometry+WIN_BTN_FLAGS)
         and WIN_BTN_FOCUS
         jr z,.ok
         ld hl,(control_geometry+4)
-        ld de,6
-        or a
-        sbc hl,de
+        ld a,6
+        call s1_hl_minus_a
         jr c,.bad
 .ok:
         xor a
@@ -934,15 +877,11 @@ s2_preflight_type_geometry:
 ; window rectangle before the first backstore byte is touched.
 s2_preflight_label:
         ld de,(item_scratch+WIN_ITEM_CONTROL)
-        ld bc,WIN_LABEL_SIZE
-        ld hl,label_scratch
-        call s1_copy_caller_block
+        call s1_copy_label_block
         ret nz
         call s2_require_label_geometry
-        or a
         ret nz
         call s1_label_prepare_loaded
-        or a
         ret nz
 
         ld hl,(text_pixel_width)
@@ -1000,24 +939,13 @@ s2_load_control_geometry:
 ; descriptor-specific renderers decide whether that is meaningful.
 s2_validate_geometry_screen:
         ld hl,control_geometry
-        ld de,rect_scratch
-        ld bc,8
-        ldir
-        ld hl,(rect_scratch+WIN_RC_WIDTH)
-        ld a,h
-        or l
-        jr nz,.height
-        inc hl
-        ld (rect_scratch+WIN_RC_WIDTH),hl
-.height:
-        ld hl,(rect_scratch+WIN_RC_HEIGHT)
-        ld a,h
-        or l
-        jr nz,.validate
-        inc hl
-        ld (rect_scratch+WIN_RC_HEIGHT),hl
-.validate:
-        jp s1_load_rect_internal
+        jp s1_normalize_rect_from_hl
+
+; Load then screen-validate the current item's control geometry.
+s2_check_control_geometry:
+        call s2_load_control_geometry
+        ret nz
+        jp s2_validate_geometry_screen
 
 s2_validate_geometry_window:
         ld hl,(control_geometry+0)
@@ -1244,7 +1172,12 @@ s2_advance_row_page:
 
 s2_prepare_row_addresses:
         ifdef WIN320_TEST_BUILD
-        ld hl,#a000
+        ; Test-only stand-in for the backstore's data-window base. Kept well
+        ; above win320.asm's own compiled size plus every t_stageN.asm test's
+        ; appended code/data in the flat noslot64k image, so a multi-row
+        ; backstore copy never overwrites test code (see t_stage0.asm's
+        ; auto_stack_values for the same class of collision).
+        ld hl,#e000
         else
         ld hl,(resolved_data_base)
         endif
@@ -1268,15 +1201,7 @@ s2_map_backstore_row:
         ld hl,s2_test_map_count
         inc (hl)
         endif
-        call s1_save_iff
-        ld a,(resolved_data_port)
-        ld c,a
-        call s1_read_page_c
-        ld (saved_data_page),a
-        ld a,(resolved_vram_port)
-        ld c,a
-        call s1_read_page_c
-        ld (saved_vram_page),a
+        call s1_save_pair_pages
         ld a,(s2_row_page)
         ld e,a
         ld d,0
@@ -1294,12 +1219,7 @@ s2_map_backstore_row:
         jp s1_write_page_c
 
 s2_unmap_backstore_row:
-        ld a,#c0
-        out (YPORT),a
-        ld a,(resolved_vram_port)
-        ld c,a
-        ld a,(saved_vram_page)
-        call s1_write_page_c
+        call s1_unmap_vram_core
         ld a,(resolved_data_port)
         ld c,a
         ld a,(saved_data_page)
@@ -1333,10 +1253,9 @@ s2_copy_row_mapped:
         ld a,(s2_copy_width)
         or a
         ret z
-        jp s2_copy_chunk
+        jr s2_copy_chunk
 .short:
         ld a,(s2_copy_width)
-        jp s2_copy_chunk
 
 ; HL=source, DE=destination, A=count (0 means WIN_BACKSTORE_CHUNK=256).
 s2_copy_chunk:
